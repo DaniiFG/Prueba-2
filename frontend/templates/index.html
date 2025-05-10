@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}Bienvenido | Sistema de Detección de Fraude{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4">Sistema de Detección de Fraude</h1>
+        <p class="lead">Una solución avanzada para la detección de transacciones fraudulentas</p>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-lg border-0">
+                <div class="card-body p-5">
+                    <h2 class="text-center mb-4">Bienvenido a nuestro sistema</h2>
+                    
+                    <p class="text-center">
+                        Por favor, inicia sesión para continuar:
+                    </p>
+                    
+                    <div class="d-grid gap-2 col-6 mx-auto mt-4">
+                        <a href="{% url 'login' %}" class="btn btn-primary btn-lg">
+                            <i class="fas fa-sign-in-alt me-2"></i>Iniciar Sesión
+                        </a>
+                        <a href="{% url 'register' %}" class="btn btn-outline-primary btn-lg">
+                            <i class="fas fa-user-plus me-2"></i>Registrarse
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-4 shadow border-0">
+                <div class="card-body p-4">
+                    <h3 class="text-center mb-3">Características Principales</h3>
+                    
+                    <div class="row text-center">
+                        <div class="col-md-4 mb-3">
+                            <div class="p-3">
+                                <i class="fas fa-shield-alt fa-3x text-primary mb-3"></i>
+                                <h5>Detección Avanzada</h5>
+                                <p class="small text-muted">Detección de fraude con machine learning</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="p-3">
+                                <i class="fas fa-tachometer-alt fa-3x text-primary mb-3"></i>
+                                <h5>Tiempo Real</h5>
+                                <p class="small text-muted">Análisis de transacciones en tiempo real</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="p-3">
+                                <i class="fas fa-chart-line fa-3x text-primary mb-3"></i>
+                                <h5>Estadísticas</h5>
+                                <p class="small text-muted">Reportes y visualizaciones detalladas</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

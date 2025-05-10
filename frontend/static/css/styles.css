@@ -1,0 +1,262 @@
+/* frontend/static/css/styles.css */
+
+/* Estilos Generales */
+body {
+    font-family: 'Nunito', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #f8f9fc;
+    color: #333;
+}
+
+/* Navbar */
+.navbar-brand {
+    font-weight: 800;
+    font-size: 1.2rem;
+}
+
+/* Cards */
+.card {
+    border: none;
+    border-radius: 10px;
+    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    border-bottom: 1px solid #e3e6f0;
+    background-color: #fff;
+    border-top-left-radius: 10px !important;
+    border-top-right-radius: 10px !important;
+    padding: 1rem 1.25rem;
+}
+
+.card-footer {
+    border-top: 1px solid #e3e6f0;
+    background-color: #fff;
+    border-bottom-left-radius: 10px !important;
+    border-bottom-right-radius: 10px !important;
+}
+
+/* Buttons */
+.btn {
+    border-radius: 0.35rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.btn-primary {
+    background-color: #4e73df;
+    border-color: #4e73df;
+}
+
+.btn-primary:hover {
+    background-color: #3a5cd0;
+    border-color: #3a5cd0;
+}
+
+.btn-success {
+    background-color: #1cc88a;
+    border-color: #1cc88a;
+}
+
+.btn-success:hover {
+    background-color: #17a673;
+    border-color: #17a673;
+}
+
+.btn-danger {
+    background-color: #e74a3b;
+    border-color: #e74a3b;
+}
+
+.btn-danger:hover {
+    background-color: #d33c2d;
+    border-color: #d33c2d;
+}
+
+/* Badges */
+.badge {
+    font-weight: 600;
+    border-radius: 0.35rem;
+    padding: 0.25em 0.6em;
+}
+
+/* Alerts */
+.alert {
+    border-radius: 0.35rem;
+    border: none;
+}
+
+.alert-primary {
+    background-color: #cfe2ff;
+    color: #084298;
+}
+
+.alert-success {
+    background-color: #d1e7dd;
+    color: #0f5132;
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    color: #664d03;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    color: #842029;
+}
+
+/* Tables */
+.table {
+    color: #5a5c69;
+}
+
+.table thead th {
+    background-color: #f8f9fc;
+    border-bottom: 2px solid #e3e6f0;
+    font-weight: 700;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(78, 115, 223, 0.05);
+}
+
+/* Avatar */
+.avatar-circle {
+    width: 100px;
+    height: 100px;
+    background-color: #4e73df;
+    text-align: center;
+    border-radius: 50%;
+    -webkit-border-radius: 50%;
+    -moz-border-radius: 50%;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.initials {
+    font-size: 40px;
+    line-height: 1;
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Forms */
+.form-label {
+    font-weight: 600;
+    color: #5a5c69;
+}
+
+.form-control {
+    border-radius: 0.35rem;
+    padding: 0.5rem 1rem;
+    border: 1px solid #d1d3e2;
+}
+
+.form-control:focus {
+    border-color: #bac8f3;
+    box-shadow: 0 0 0 0.25rem rgba(78, 115, 223, 0.25);
+}
+
+/* Custom Borders for Admin Panel */
+.border-left-primary {
+    border-left: 0.25rem solid #4e73df;
+}
+
+.border-left-success {
+    border-left: 0.25rem solid #1cc88a;
+}
+
+.border-left-warning {
+    border-left: 0.25rem solid #f6c23e;
+}
+
+.border-left-danger {
+    border-left: 0.25rem solid #e74a3b;
+}
+
+/* Progress Bar */
+.progress {
+    border-radius: 0.35rem;
+    height: 1rem;
+    background-color: #eaecf4;
+}
+
+/* Dashboard Cards */
+.stat-card {
+    border-radius: 0.35rem;
+    overflow: hidden;
+}
+
+.stat-card .card-body {
+    padding: 1.5rem;
+}
+
+/* Modal */
+.modal-content {
+    border-radius: 0.5rem;
+    border: none;
+}
+
+.modal-header {
+    border-bottom: 1px solid #e3e6f0;
+    background-color: #f8f9fc;
+    border-top-left-radius: 0.5rem;
+    border-top-right-radius: 0.5rem;
+}
+
+.modal-footer {
+    border-top: 1px solid #e3e6f0;
+    background-color: #f8f9fc;
+    border-bottom-left-radius: 0.5rem;
+    border-bottom-right-radius: 0.5rem;
+}
+
+/* Footer */
+footer {
+    border-top: 1px solid #e3e6f0;
+    margin-top: 2rem;
+}
+
+/* Custom Text Colors */
+.text-primary {
+    color: #4e73df !important;
+}
+
+.text-success {
+    color: #1cc88a !important;
+}
+
+.text-warning {
+    color: #f6c23e !important;
+}
+
+.text-danger {
+    color: #e74a3b !important;
+}
+
+.text-gray-800 {
+    color: #5a5c69 !important;
+}
+
+.text-gray-300 {
+    color: #dddfeb !important;
+}
+
+/* Media Queries */
+@media (max-width: 768px) {
+    .card-body {
+        padding: 1rem;
+    }
+    
+    .stat-card .card-body {
+        padding: 1rem;
+    }
+    
+    .h5 {
+        font-size: 1.1rem;
+    }
+}

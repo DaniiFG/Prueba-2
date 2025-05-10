@@ -1,0 +1,287 @@
+<!-- frontend/templates/admin_panel/dashboard.html -->
+{% extends 'base.html' %}
+
+{% block title %}Panel de Administrador | Sistema de Detección de Fraude{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        transition: all 0.3s;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h2 class="mb-0"><i class="fas fa-tachometer-alt me-2"></i>Panel de Administrador</h2>
+        <p class="text-muted">Monitoreo de transacciones y detección de fraude</p>
+    </div>
+    <div class="col-md-6 text-md-end">
+        <a href="{% url 'admin_transactions' %}" class="btn btn-primary">
+            <i class="fas fa-list me-2"></i>Ver todas las transacciones
+        </a>
+    </div>
+</div>
+
+<!-- Tarjetas de estadísticas -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-primary shadow h-100 py-2 stat-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                            Transacciones Hoy</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.total }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-calendar fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-success shadow h-100 py-2 stat-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            Monto Total (Hoy)</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">${{ stats.today.total_amount }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-dollar-sign fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-warning shadow h-100 py-2 stat-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                            Posible Fraude (Hoy)</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.possibly_fraudulent }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-exclamation-triangle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-danger shadow h-100 py-2 stat-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">
+                            Fraude Detectado (Hoy)</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.fraudulent }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-bug fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráficos de estadísticas -->
+<div class="row mb-4">
+    <div class="col-xl-8 col-lg-7">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Transacciones por Día (Último Mes)</h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="transactionsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-4 col-lg-5">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Distribución por Estado</h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alertas de Fraude -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Últimas Alertas de Fraude</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Fecha</th>
+                                <th>Remitente</th>
+                                <th>Destinatario</th>
+                                <th>Monto</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in fraud_transactions %}
+                            <tr>
+                                <td>{{ transaction.id|truncatechars:8 }}</td>
+                                <td>{{ transaction.created_at|date:"d/m/Y H:i" }}</td>
+                                <td>{{ transaction.sender_name }}</td>
+                                <td>{{ transaction.receiver_name }}</td>
+                                <td>${{ transaction.amount }}</td>
+                                <td>
+                                    {% if transaction.status == 'legitimate' %}
+                                        <span class="badge bg-success">Legítima</span>
+                                    {% elif transaction.status == 'possibly_fraudulent' %}
+                                        <span class="badge bg-warning text-dark">Revisión</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Fraudulenta</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{% url 'admin_transactions' %}?id={{ transaction.id }}" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-search me-1"></i>Ver
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center py-4">
+                                    <div class="text-muted mb-3">
+                                        <i class="fas fa-check-circle fa-3x"></i>
+                                    </div>
+                                    <p>No hay alertas de fraude recientes</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Inicializar datos para evitar errores
+    let monthlyData = {};
+    let legitimateCount = 0;
+    let possiblyFraudulentCount = 0;
+    let fraudulentCount = 0;
+    
+    // Preparar los datos desde Django
+    {% if stats.last_month and stats.last_month.daily_distribution %}
+        monthlyData = JSON.parse('{{ stats.last_month.daily_distribution|escapejs }}');
+    {% endif %}
+    
+    {% if stats.last_month and stats.last_month.legitimate %}
+        legitimateCount = {{ stats.last_month.legitimate }};
+    {% endif %}
+    
+    {% if stats.last_month and stats.last_month.possibly_fraudulent %}
+        possiblyFraudulentCount = {{ stats.last_month.possibly_fraudulent }};
+    {% endif %}
+    
+    {% if stats.last_month and stats.last_month.fraudulent %}
+        fraudulentCount = {{ stats.last_month.fraudulent }};
+    {% endif %}
+    
+    // Gráfico de transacciones por día
+    const transactionsCtx = document.getElementById('transactionsChart').getContext('2d');
+    const transactionsChart = new Chart(transactionsCtx, {
+        type: 'line',
+        data: {
+            labels: Object.keys(monthlyData),
+            datasets: [{
+                label: 'Número de Transacciones',
+                data: Object.values(monthlyData),
+                backgroundColor: 'rgba(78, 115, 223, 0.05)',
+                borderColor: 'rgba(78, 115, 223, 1)',
+                pointRadius: 3,
+                pointBackgroundColor: 'rgba(78, 115, 223, 1)',
+                pointBorderColor: 'rgba(78, 115, 223, 1)',
+                pointHoverRadius: 5,
+                pointHoverBackgroundColor: 'rgba(78, 115, 223, 1)',
+                pointHoverBorderColor: 'rgba(78, 115, 223, 1)',
+                pointHitRadius: 10,
+                pointBorderWidth: 2,
+                tension: 0.3,
+                fill: true
+            }]
+        },
+        options: {
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+    
+    // Gráfico de distribución por estado
+    const statusCtx = document.getElementById('statusChart').getContext('2d');
+    const statusChart = new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Legítimas', 'Posible Fraude', 'Fraudulentas'],
+            datasets: [{
+                data: [legitimateCount, possiblyFraudulentCount, fraudulentCount],
+                backgroundColor: ['#1cc88a', '#f6c23e', '#e74a3b'],
+                hoverBackgroundColor: ['#17a673', '#dda20a', '#be2617'],
+                hoverBorderColor: 'rgba(234, 236, 244, 1)'
+            }]
+        },
+        options: {
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            cutout: '70%'
+        }
+    });
+</script>
+{% endblock %}

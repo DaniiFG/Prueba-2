@@ -1,0 +1,385 @@
+<!-- frontend/templates/admin_panel/transactions.html -->
+{% extends 'base.html' %}
+
+{% block title %}Administración de Transacciones | Sistema de Detección de Fraude{% endblock %}
+
+{% block extra_css %}
+<style>
+    .badge-legitimate {
+        background-color: #28a745;
+    }
+    .badge-possibly_fraudulent {
+        background-color: #ffc107;
+        color: #212529;
+    }
+    .badge-fraudulent {
+        background-color: #dc3545;
+    }
+    tr.selected {
+        background-color: rgba(0, 123, 255, 0.1);
+    }
+    .status-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 5px;
+    }
+    .dot-legitimate { background-color: #28a745; }
+    .dot-possibly_fraudulent { background-color: #ffc107; }
+    .dot-fraudulent { background-color: #dc3545; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h2 class="mb-0"><i class="fas fa-exchange-alt me-2"></i>Administración de Transacciones</h2>
+        <p class="text-muted">Monitoreo y gestión de todas las transacciones</p>
+    </div>
+    <div class="col-md-6 text-md-end">
+        <a href="{% url 'admin_dashboard' %}" class="btn btn-outline-primary">
+            <i class="fas fa-tachometer-alt me-2"></i>Volver al Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">Filtros de Búsqueda</h6>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label for="status" class="form-label">Estado</label>
+                <select class="form-select" id="status" name="status">
+                    <option value="" {% if not status_filter %}selected{% endif %}>Todos</option>
+                    <option value="legitimate" {% if status_filter == 'legitimate' %}selected{% endif %}>Legítimas</option>
+                    <option value="possibly_fraudulent" {% if status_filter == 'possibly_fraudulent' %}selected{% endif %}>Posible Fraude</option>
+                    <option value="fraudulent" {% if status_filter == 'fraudulent' %}selected{% endif %}>Fraudulentas</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="min_amount" class="form-label">Monto Mínimo</label>
+                <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    <input type="number" class="form-control" id="min_amount" name="min_amount" value="{{ min_amount }}" min="0" step="1">
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label for="max_amount" class="form-label">Monto Máximo</label>
+                <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    <input type="number" class="form-control" id="max_amount" name="max_amount" value="{{ max_amount }}" min="0" step="1">
+                </div>
+            </div>
+            <div class="col-12 mt-3 text-end">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-filter me-2"></i>Aplicar Filtros
+                </button>
+                <a href="{% url 'admin_transactions' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-undo me-2"></i>Limpiar Filtros
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Lista de Transacciones -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+        <h6 class="m-0 font-weight-bold text-primary">Listado de Transacciones</h6>
+        <div>
+            <span class="mr-3">
+                <span class="status-dot dot-legitimate"></span> Legítimas
+            </span>
+            <span class="mr-3">
+                <span class="status-dot dot-possibly_fraudulent"></span> Posible Fraude
+            </span>
+            <span>
+                <span class="status-dot dot-fraudulent"></span> Fraudulentas
+            </span>
+        </div>
+    </div>
+    <div class="card-body">
+        {% if transactions %}
+            <div class="table-responsive">
+                <table class="table table-hover" id="transactionsTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Fecha</th>
+                            <th>Remitente</th>
+                            <th>Destinatario</th>
+                            <th>Monto</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for transaction in transactions %}
+                        <tr data-id="{{ transaction.id }}" data-status="{{ transaction.status }}">
+                            <td>{{ transaction.id|truncatechars:8 }}</td>
+                            <td>{{ transaction.created_at|date:"d/m/Y H:i" }}</td>
+                            <td>{{ transaction.sender_name }}</td>
+                            <td>{{ transaction.receiver_name }}</td>
+                            <td>${{ transaction.amount }}</td>
+                            <td>
+                                {% if transaction.status == 'legitimate' %}
+                                    <span class="badge badge-legitimate">Legítima</span>
+                                {% elif transaction.status == 'possibly_fraudulent' %}
+                                    <span class="badge badge-possibly_fraudulent">Posible Fraude</span>
+                                {% else %}
+                                    <span class="badge badge-fraudulent">Fraudulenta</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-primary view-details" data-id="{{ transaction.id }}">
+                                    <i class="fas fa-eye me-1"></i>Ver
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                <p class="lead">No se encontraron transacciones con los filtros seleccionados</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal de Detalles de Transacción -->
+<div class="modal fade" id="transactionModal" tabindex="-1" aria-labelledby="transactionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="transactionModalLabel">Detalles de la Transacción</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="transactionDetails">
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6 class="text-muted">ID de Transacción</h6>
+                            <p class="lead" id="modal-id"></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Fecha y Hora</h6>
+                            <p class="lead" id="modal-datetime"></p>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Remitente</h6>
+                            <p class="lead" id="modal-sender"></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Destinatario</h6>
+                            <p class="lead" id="modal-receiver"></p>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Monto</h6>
+                            <p class="lead" id="modal-amount"></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Puntuación de Fraude</h6>
+                            <div class="progress" style="height: 25px;">
+                                <div id="fraud-score-bar" class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h6 class="text-muted">Mensaje</h6>
+                        <p id="modal-message"></p>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="mb-4">
+                        <h6 class="text-muted">Estado Actual</h6>
+                        <p id="modal-status-badge"></p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="update-status" class="form-label">Actualizar Estado</label>
+                        <select class="form-select" id="update-status">
+                            <option value="legitimate">Legítima</option>
+                            <option value="possibly_fraudulent">Posible Fraude</option>
+                            <option value="fraudulent">Fraudulenta</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-primary" id="update-status-btn">
+                    <i class="fas fa-save me-2"></i>Guardar Cambios
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        // Variable global para almacenar el ID de la transacción actual
+        let currentTransactionId = null;
+        
+        // Función para formatear fecha
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString('es-CO', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        
+        // Manejador para botón "Ver detalles"
+        $('.view-details').click(function() {
+            const transactionId = $(this).data('id');
+            currentTransactionId = transactionId;
+            
+            // Buscar los datos de la transacción en la tabla
+            const row = $(`tr[data-id="${transactionId}"]`);
+            const status = row.data('status');
+            
+            // Llenar el modal con los datos
+            $('#modal-id').text(transactionId);
+            $('#modal-datetime').text(row.find('td:eq(1)').text());
+            $('#modal-sender').text(row.find('td:eq(2)').text());
+            $('#modal-receiver').text(row.find('td:eq(3)').text());
+            $('#modal-amount').text(row.find('td:eq(4)').text());
+            
+            // Puntuación de fraude (simulada basada en el estado)
+            let fraudScore = 0;
+            if (status === 'legitimate') {
+                fraudScore = 20;
+            } else if (status === 'possibly_fraudulent') {
+                fraudScore = 65;
+            } else if (status === 'fraudulent') {
+                fraudScore = 90;
+            }
+            
+            $('#fraud-score-bar').css('width', `${fraudScore}%`).attr('aria-valuenow', fraudScore).text(`${fraudScore}%`);
+            
+            // Color de la barra de progreso
+            if (fraudScore < 40) {
+                $('#fraud-score-bar').removeClass('bg-warning bg-danger').addClass('bg-success');
+            } else if (fraudScore < 70) {
+                $('#fraud-score-bar').removeClass('bg-success bg-danger').addClass('bg-warning');
+            } else {
+                $('#fraud-score-bar').removeClass('bg-success bg-warning').addClass('bg-danger');
+            }
+            
+            // Estado actual
+            let statusBadge = '';
+            if (status === 'legitimate') {
+                statusBadge = '<span class="badge badge-legitimate">Legítima</span>';
+            } else if (status === 'possibly_fraudulent') {
+                statusBadge = '<span class="badge badge-possibly_fraudulent">Posible Fraude</span>';
+            } else if (status === 'fraudulent') {
+                statusBadge = '<span class="badge badge-fraudulent">Fraudulenta</span>';
+            }
+            $('#modal-status-badge').html(statusBadge);
+            
+            // Seleccionar el estado actual en el dropdown
+            $('#update-status').val(status);
+            
+            // Mensaje (simulado)
+            $('#modal-message').text('No hay mensaje adicional para esta transacción.');
+            
+            // Mostrar el modal
+            $('#transactionModal').modal('show');
+        });
+        
+        // Manejador para actualizar estado
+        $('#update-status-btn').click(function() {
+            if (!currentTransactionId) return;
+            
+            const newStatus = $('#update-status').val();
+            
+            // Llamada AJAX para actualizar el estado
+            $.ajax({
+                url: '{% url "update_transaction_status" %}',
+                type: 'POST',
+                data: JSON.stringify({
+                    transaction_id: currentTransactionId,
+                    status: newStatus
+                }),
+                contentType: 'application/json',
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                success: function(response) {
+                    if (response.success) {
+                        // Actualizar la UI
+                        const row = $(`tr[data-id="${currentTransactionId}"]`);
+                        
+                        // Actualizar el estado en la fila
+                        let badgeHtml = '';
+                        if (newStatus === 'legitimate') {
+                            badgeHtml = '<span class="badge badge-legitimate">Legítima</span>';
+                        } else if (newStatus === 'possibly_fraudulent') {
+                            badgeHtml = '<span class="badge badge-possibly_fraudulent">Posible Fraude</span>';
+                        } else if (newStatus === 'fraudulent') {
+                            badgeHtml = '<span class="badge badge-fraudulent">Fraudulenta</span>';
+                        }
+                        
+                        row.find('td:eq(5)').html(badgeHtml);
+                        row.data('status', newStatus);
+                        
+                        // Actualizar el modal
+                        $('#modal-status-badge').html(badgeHtml);
+                        
+                        // Cerrar el modal
+                        $('#transactionModal').modal('hide');
+                        
+                        // Mostrar notificación
+                        alert('Estado actualizado correctamente');
+                        
+                        // Recargar la página para reflejar los cambios
+                        location.reload();
+                    } else {
+                        alert('Error al actualizar el estado: ' + response.error);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.error('Error:', error);
+                    alert('Error al comunicarse con el servidor');
+                }
+            });
+        });
+        
+        // Función para obtener el token CSRF
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+    });
+</script>
+{% endblock %}

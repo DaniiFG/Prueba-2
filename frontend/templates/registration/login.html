@@ -1,0 +1,46 @@
+<!-- frontend/templates/registration/login.html -->
+{% extends 'base.html' %}
+
+{% block title %}Iniciar Sesión | Sistema de Detección de Fraude{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="fas fa-sign-in-alt me-2"></i>Iniciar Sesión</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Correo Electrónico</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-envelope"></i></span>
+                            <input type="email" class="form-control" id="email" name="email" required autofocus>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Contraseña</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-sign-in-alt me-2"></i>Iniciar Sesión
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer bg-light">
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'password_reset' %}" class="text-decoration-none">¿Olvidaste tu contraseña?</a>
+                    <a href="{% url 'register' %}" class="text-decoration-none">Crear cuenta nueva</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

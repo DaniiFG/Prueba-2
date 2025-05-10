@@ -1,0 +1,119 @@
+<!-- frontend/templates/user_panel/dashboard.html -->
+{% extends 'base.html' %}
+
+{% block title %}Mi Panel | Sistema de Detección de Fraude{% endblock %}
+
+{% block extra_css %}
+<style>
+    .transaction-card {
+        transition: transform 0.3s;
+    }
+    .transaction-card:hover {
+        transform: translateY(-5px);
+    }
+    .badge-legitimate {
+        background-color: #28a745;
+    }
+    .badge-possibly_fraudulent {
+        background-color: #ffc107;
+    }
+    .badge-fraudulent {
+        background-color: #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h2 class="mb-4"><i class="fas fa-tachometer-alt me-2"></i>Panel de Usuario</h2>
+    </div>
+    <div class="col-md-6 text-md-end">
+        <a href="{% url 'transaction_form' %}" class="btn btn-primary">
+            <i class="fas fa-paper-plane me-2"></i>Realizar Transacción
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-user me-2"></i>Información Personal</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-center mb-4">
+                    <div class="avatar-circle bg-primary text-white">
+                        <span class="initials">{{ user_data.first_name|first }}{{ user_data.last_name|first }}</span>
+                    </div>
+                </div>
+                <h4 class="text-center mb-4">{{ user_data.first_name }} {{ user_data.last_name }}</h4>
+                <ul class="list-group">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-envelope me-2"></i>Correo Electrónico</span>
+                        <span class="text-muted">{{ user_data.email }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-phone me-2"></i>Teléfono</span>
+                        <span class="text-muted">{{ user_data.phone_number }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-wallet me-2"></i>Saldo Disponible</span>
+                        <span class="badge bg-success rounded-pill">${{ user_data.balance }}</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-history me-2"></i>Historial de Transacciones</h5>
+            </div>
+            <div class="card-body">
+                {% if transactions %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Destinatario</th>
+                                    <th>Monto</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for transaction in transactions %}
+                                <tr>
+                                    <td>{{ transaction.created_at|date:"d/m/Y H:i" }}</td>
+                                    <td>{{ transaction.receiver_name }}</td>
+                                    <td>${{ transaction.amount }}</td>
+                                    <td>
+                                        {% if transaction.status == 'legitimate' %}
+                                            <span class="badge bg-success">Legítima</span>
+                                        {% elif transaction.status == 'possibly_fraudulent' %}
+                                            <span class="badge bg-warning text-dark">Revisión</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">Fraudulenta</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-exchange-alt fa-3x text-muted mb-3"></i>
+                        <p class="lead">No tienes transacciones registradas</p>
+                        <a href="{% url 'transaction_form' %}" class="btn btn-primary">
+                            <i class="fas fa-paper-plane me-2"></i>Realizar tu primera transacción
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
