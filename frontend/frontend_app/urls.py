@@ -15,8 +15,8 @@ urlpatterns = [
     path('transaction/new/', views.transaction_form, name='transaction_form'),
     
     # Panel de administrador
-    path('admin/dashboard/', views.admin_dashboard, name='admin_dashboard'),
-    path('admin/transactions/', views.admin_transactions, name='admin_transactions'),
+    path('admin-panel/dashboard/', views.admin_dashboard, name='admin_dashboard'),
+    path('admin-panel/transactions/', views.admin_transactions, name='admin_transactions'),
     
     # API para AJAX
     path('api/update-transaction-status/', views.update_transaction_status, name='update_transaction_status'),

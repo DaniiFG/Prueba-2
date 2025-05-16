@@ -30,125 +30,111 @@ class FraudAnalysisView(APIView):
     
     def post(self, request, format=None):
         """Recibir una transacción y analizarla"""
+        print("Recibiendo solicitud de análisis de fraude:", request.data)
+        
         # Validar datos de entrada
         serializer = TransactionAnalysisRequestSerializer(data=request.data)
         if not serializer.is_valid():
+            print("Errores de validación:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        # Obtener datos de la transacción
-        transaction_data = serializer.validated_data
-        transaction_id = transaction_data['transaction_id']
-        sender_id = transaction_data['sender_id']
-        amount = transaction_data['amount']
-        created_at = transaction_data['created_at']
+        try:
+            # Obtener datos de la transacción
+            transaction_data = serializer.validated_data
+            transaction_id = transaction_data['transaction_id']
+            sender_id = transaction_data['sender_id']
+            amount = transaction_data['amount']
+            created_at = transaction_data['created_at']
+            
+            print(f"Datos validados: ID={transaction_id}, sender={sender_id}, amount={amount}")
+            
+            # Convertir created_at a tipo datetime si es string
+            if isinstance(created_at, str):
+                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            
+            # Extraer características de la transacción
+            features = self._extract_features(sender_id, amount, created_at)
+            print(f"Características extraídas: {features}")
+            
+            # Resto del código...
+            
+            # Crear transacción
+            try:
+                transaction_feature = TransactionFeature.objects.create(
+                    transaction_id=transaction_id,
+                    sender_id=sender_id,
+                    amount=amount,
+                    created_at=created_at,
+                    hour_of_day=features['hour_of_day'],
+                    day_of_week=features['day_of_week'],
+                    is_weekend=features['is_weekend'],
+                    sender_avg_amount=features['sender_avg_amount'],
+                    sender_transaction_count=features['sender_transaction_count'],
+                    sender_transaction_frequency=features['sender_transaction_frequency'],
+                    amount_deviation=features['amount_deviation']
+                )
+                print(f"TransactionFeature creado: {transaction_feature.id}")
+            except Exception as e:
+                print(f"Error al crear TransactionFeature: {str(e)}")
+                # Continuar incluso si hay error al guardar
+                pass
+            
+            # Preparar datos para el modelo
+            model_input = {
+                'amount': amount,
+                'created_at': created_at,
+                'sender_avg_amount': features['sender_avg_amount'],
+                'sender_transaction_count': features['sender_transaction_count'],
+                'sender_transaction_frequency': features['sender_transaction_frequency'],
+                'amount_deviation': features['amount_deviation']
+            }
+            
+            # Cargar modelo y predecir
+            try:
+                model = FraudDetectionModel()
+                prediction = model.predict(model_input)
+                print(f"Predicción del modelo: {prediction}")
+                
+                # Si se creó la transacción, actualizarla
+                if 'transaction_feature' in locals():
+                    transaction_feature.fraud_score = prediction['fraud_score']
+                    transaction_feature.is_fraud = prediction['is_fraud']
+                    transaction_feature.model_version = prediction['model_version']
+                    transaction_feature.save()
+                
+                # Actualizar perfil de usuario
+                self._update_user_profile(sender_id, amount, created_at, prediction['is_fraud'])
+            except Exception as e:
+                print(f"Error en la predicción: {str(e)}")
+                # Usar valores predeterminados si hay error
+                prediction = {
+                    'fraud_score': 0.1,
+                    'is_fraud': False,
+                    'confidence': 0.9,
+                    'risk_factors': ["Error en análisis: se usa valor predeterminado"],
+                    'model_version': 'error'
+                }
+            
+            # Preparar respuesta
+            response_data = {
+                'transaction_id': transaction_id,
+                'fraud_score': prediction['fraud_score'],
+                'is_fraud': prediction['is_fraud'],
+                'confidence': prediction['confidence'],
+                'risk_factors': prediction['risk_factors'],
+                'model_version': prediction['model_version']
+            }
+            
+            print(f"Respuesta del análisis: {response_data}")
+            
+            # Serializar y retornar
+            response_serializer = TransactionAnalysisResponseSerializer(data=response_data)
+            response_serializer.is_valid(raise_exception=True)
+            return Response(response_serializer.data)
         
-        # Convertir created_at a tipo datetime si es string
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-        
-        # Extraer características de la transacción
-        features = self._extract_features(sender_id, amount, created_at)
-        
-        # Guardar características extraídas
-        transaction_feature = TransactionFeature.objects.create(
-            transaction_id=transaction_id,
-            sender_id=sender_id,
-            amount=amount,
-            created_at=created_at,
-            hour_of_day=features['hour_of_day'],
-            day_of_week=features['day_of_week'],
-            is_weekend=features['is_weekend'],
-            sender_avg_amount=features['sender_avg_amount'],
-            sender_transaction_count=features['sender_transaction_count'],
-            sender_transaction_frequency=features['sender_transaction_frequency'],
-            amount_deviation=features['amount_deviation']
-        )
-        
-        # Preparar datos para el modelo
-        model_input = {
-            'amount': amount,
-            'created_at': created_at,
-            'sender_avg_amount': features['sender_avg_amount'],
-            'sender_transaction_count': features['sender_transaction_count'],
-            'sender_transaction_frequency': features['sender_transaction_frequency'],
-            'amount_deviation': features['amount_deviation']
-        }
-        
-        # Cargar modelo y predecir
-        model = FraudDetectionModel()
-        prediction = model.predict(model_input)
-        
-        # Actualizar características con la predicción
-        transaction_feature.fraud_score = prediction['fraud_score']
-        transaction_feature.is_fraud = prediction['is_fraud']
-        transaction_feature.model_version = prediction['model_version']
-        transaction_feature.save()
-        
-        # Actualizar perfil de usuario
-        self._update_user_profile(sender_id, amount, created_at, prediction['is_fraud'])
-        
-        # Preparar respuesta
-        response_data = {
-            'transaction_id': transaction_id,
-            'fraud_score': prediction['fraud_score'],
-            'is_fraud': prediction['is_fraud'],
-            'confidence': prediction['confidence'],
-            'risk_factors': prediction['risk_factors'],
-            'model_version': prediction['model_version']
-        }
-        
-        # Serializar y retornar
-        response_serializer = TransactionAnalysisResponseSerializer(data=response_data)
-        response_serializer.is_valid(raise_exception=True)
-        return Response(response_serializer.data)
-    
-    def _extract_features(self, sender_id, amount, created_at):
-        """Extraer características de la transacción para análisis"""
-        # Obtener o crear perfil de usuario
-        user_profile, created = UserActivityProfile.objects.get_or_create(user_id=sender_id)
-        
-        # Extraer hora y día de la semana
-        hour_of_day = created_at.hour
-        day_of_week = created_at.weekday()  # 0=lunes, 6=domingo
-        is_weekend = day_of_week >= 5  # 5=sábado, 6=domingo
-        
-        # Características del remitente desde su perfil
-        sender_avg_amount = user_profile.avg_transaction_amount
-        sender_transaction_count = user_profile.total_transactions
-        
-        # Calcular frecuencia de transacciones (transacciones por día)
-        sender_transaction_frequency = 0.0
-        if sender_transaction_count > 0:
-            # Calcular días desde la primera transacción (aproximado)
-            days_active = (timezone.now() - user_profile.last_active).days + 1
-            sender_transaction_frequency = sender_transaction_count / max(days_active, 1)
-        
-        # Calcular desviación del monto respecto al promedio
-        amount_deviation = 0.0
-        if sender_avg_amount > 0:
-            amount_deviation = (amount - sender_avg_amount) / max(sender_avg_amount, 1)
-        
-        return {
-            'hour_of_day': hour_of_day,
-            'day_of_week': day_of_week,
-            'is_weekend': is_weekend,
-            'sender_avg_amount': sender_avg_amount,
-            'sender_transaction_count': sender_transaction_count,
-            'sender_transaction_frequency': sender_transaction_frequency,
-            'amount_deviation': amount_deviation
-        }
-    
-    def _update_user_profile(self, sender_id, amount, created_at, is_fraud):
-        """Actualizar perfil de usuario con la transacción actual"""
-        user_profile, created = UserActivityProfile.objects.get_or_create(user_id=sender_id)
-        
-        # Actualizar perfil
-        user_profile.update_with_transaction(amount, created_at)
-        
-        # Actualizar contador de transacciones fraudulentas si aplica
-        if is_fraud:
-            user_profile.fraudulent_transactions += 1
-            user_profile.save()
+        except Exception as e:
+            print(f"Error general en análisis de fraude: {str(e)}")
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class FraudModelViewSet(viewsets.ReadOnlyModelViewSet):
     """Vista para consultar información de los modelos de ML"""

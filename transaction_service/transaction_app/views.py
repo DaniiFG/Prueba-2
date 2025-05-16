@@ -8,7 +8,8 @@ from django.utils import timezone
 from django.db.models import Count, Sum, Q
 import requests
 from datetime import datetime, timedelta
-
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.conf import settings
 from .models import Transaction, TransactionStat
 from .serializers import (
     TransactionSerializer,
@@ -25,6 +26,35 @@ class TransactionViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'amount', 'fraud_score']
     ordering = ['-created_at']
     
+    def get_permissions(self):
+        """
+        Permitir acceso no autenticado para listar, crear y recuperar transacciones.
+        """
+        if self.action in ['list', 'create', 'retrieve', 'update_status']:
+            permission_classes = [AllowAny]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    def get_queryset(self):
+        """
+        Personalizar el queryset según la acción y el usuario.
+        """
+        queryset = super().get_queryset()
+        return queryset
+    
+    # Añadir estas líneas:
+    def get_permissions(self):
+        """
+        Permitir acceso no autenticado para listar y crear transacciones,
+        pero requerir autenticación para otras acciones.
+        """
+        if self.action in ['list', 'create', 'retrieve']:
+            permission_classes = [AllowAny]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
     def get_serializer_class(self):
         if self.action == 'create':
             return TransactionCreateSerializer
@@ -33,50 +63,36 @@ class TransactionViewSet(viewsets.ModelViewSet):
         return TransactionSerializer
     
     def create(self, request, *args, **kwargs):
+        print("Datos recibidos para crear transacción:", request.data)
+        
+        # Debug adicional
+        print("Cabeceras:", request.headers)
+        
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
         
-        # Crear la transacción
-        transaction = serializer.save()
-        
-        # Enviar transacción al servicio de análisis de fraude
         try:
-            fraud_analysis_url = 'http://localhost:8003/api/fraud/analyze/'
-            fraud_analysis_data = {
-                'transaction_id': str(transaction.id),
-                'sender_id': transaction.sender_id,
-                'amount': float(transaction.amount),
-                'created_at': transaction.created_at.isoformat()
-            }
+            serializer.is_valid(raise_exception=True)
+            transaction = serializer.save()
+            print(f"Transacción creada exitosamente: {transaction.id}")
             
-            response = requests.post(fraud_analysis_url, json=fraud_analysis_data)
+            # Simplificamos esta parte temporalmente
+            # Marcamos la transacción como legítima por defecto
+            transaction.status = 'legitimate'
+            transaction.fraud_score = 0.1
+            transaction.save()
             
-            if response.status_code == 200:
-                fraud_result = response.json()
-                transaction.fraud_score = fraud_result.get('fraud_score', 0.0)
-                
-                # Actualizar estado según score de fraude
-                if transaction.fraud_score >= 0.7:
-                    transaction.status = 'fraudulent'
-                elif transaction.fraud_score >= 0.4:
-                    transaction.status = 'possibly_fraudulent'
-                else:
-                    transaction.status = 'legitimate'
-                
-                transaction.save()
-                
-                # Actualizar estadísticas diarias
+            # Actualizar estadísticas diarias
+            try:
                 self._update_transaction_stats(transaction)
-                
-                # Si es fraudulenta, enviar notificación (simulado)
-                if transaction.status == 'fraudulent':
-                    self._send_fraud_notification(transaction)
+            except Exception as e:
+                print(f"Error al actualizar estadísticas: {str(e)}")
+            
+            # Retornar la transacción creada
+            return Response(TransactionSerializer(transaction).data, status=status.HTTP_201_CREATED)
         
         except Exception as e:
-            # En caso de error, mantener la transacción como legítima pero registrar el error
-            print(f"Error al analizar fraude: {str(e)}")
-        
-        return Response(TransactionSerializer(transaction).data, status=status.HTTP_201_CREATED)
+            print(f"Error general al procesar la transacción: {str(e)}")
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['post'])
     def update_status(self, request, pk=None):

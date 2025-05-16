@@ -144,6 +144,27 @@ REST_FRAMEWORK = {
 
 # CORS Configuration
 CORS_ALLOW_ALL_ORIGINS = True  # Cambiar en producción
+CORS_ALLOW_CREDENTIALS = True
+# Añade esta configuración adicional
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
 
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 # Configuración de Machine Learning
 ML_MODEL_PATH = os.path.join(BASE_DIR, 'fraud_app', 'ml_model', 'model.pkl')

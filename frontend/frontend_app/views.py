@@ -37,13 +37,14 @@ def login_view(request):
             if response.status_code == 200:
                 data = response.json()
                 print(f"Datos recibidos: {data.keys()}")
-                
+            
                 # Guarda en sesión e imprime
                 request.session['access_token'] = data.get('access', '')
+                request.session['refresh_token'] = data.get('refresh', '')  # Guardar también el token de refresco
                 request.session['user_data'] = data.get('user', {})
                 print(f"Guardado en sesión: {request.session.get('access_token')[:10]}... y {request.session.get('user_data')}")
                 request.session.modified = True
-                
+                                
                 # Redirigir
                 print("Redirigiendo a dashboard")
                 return redirect('user_dashboard')
@@ -187,15 +188,22 @@ def user_dashboard(request):
     
     # Obtener datos del usuario
     user_data = request.session.get('user_data', {})
-    access_token = request.session.get('access_token', '')
+    access_token = request.session.get('access_token', '')  # Obtener el token de acceso
+    
+    # Verificar si es admin
+    print(f"Verificando si el usuario es admin: {user_data.get('email')}")
+    if user_data.get('email') == 'admin@example.com':
+        print("Usuario reconocido como admin, redirigiendo al panel de administrador")
+        return redirect('admin_dashboard')
+    
     print(f"Datos de usuario: {user_data}")
     
     # Obtener transacciones del usuario
     transactions = []
-    
+
     try:
         # URL para obtener transacciones del usuario
-        url = f"http://localhost:8002/api/transactions/transactions/?sender_id={user_data.get('id')}"
+        url = f"{TRANSACTION_SERVICE_URL}transactions/?sender_id={user_data.get('id')}"
         headers = {'Authorization': f"Bearer {access_token}"}
         
         print(f"Solicitando transacciones a: {url}")
@@ -205,6 +213,7 @@ def user_dashboard(request):
         response = requests.get(url, headers=headers)
         
         print(f"Respuesta: {response.status_code}")
+        print(f"Contenido: {response.text[:500]}")  # Añadido para debug
         
         if response.status_code == 200:
             data = response.json()
@@ -212,14 +221,42 @@ def user_dashboard(request):
             print(f"Transacciones obtenidas: {len(transactions)}")
         elif response.status_code == 401:
             print("Token inválido o expirado")
-            messages.error(request, 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.')
-            return redirect('login')
+            # Intentar refrescar el token
+            refresh_token = request.session.get('refresh_token', '')
+            if refresh_token:
+                try:
+                    refresh_response = requests.post(
+                        f"{AUTH_SERVICE_URL}token/refresh/",
+                        json={"refresh": refresh_token}
+                    )
+                    if refresh_response.status_code == 200:
+                        token_data = refresh_response.json()
+                        request.session['access_token'] = token_data.get('access', '')
+                        request.session.modified = True
+                        # Continuar con el dashboard después de refrescar el token
+                        messages.info(request, 'Tu sesión ha sido actualizada.')
+                    else:
+                        # Si no se pudo refrescar, redirigir a login
+                        messages.error(request, 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.')
+                        return redirect('login')
+                except Exception as refresh_error:
+                    print(f"Error al refrescar token: {str(refresh_error)}")
+                    messages.error(request, 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.')
+                    return redirect('login')
+            else:
+                # Si no hay token de refresco
+                messages.error(request, 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.')
+                return redirect('login')
         else:
             print(f"Error al obtener transacciones: {response.status_code}")
             messages.error(request, 'Error al obtener el historial de transacciones.')
     except Exception as e:
         print(f"Excepción al obtener transacciones: {str(e)}")
         messages.error(request, f'Error de conexión: {str(e)}')
+        
+        
+        
+        
     
     context = {
         'user_data': user_data,
@@ -294,7 +331,7 @@ def transaction_form(request):
             }
             
             # URL del microservicio de transacciones
-            url = "http://localhost:8002/api/transactions/transactions/"
+            url = f"{TRANSACTION_SERVICE_URL}transactions/"
             
             print(f"Enviando solicitud a {url}")
             print(f"Datos: {transaction_data}")
@@ -339,11 +376,28 @@ def transaction_form(request):
 @login_required
 def admin_dashboard(request):
     """Vista del panel de administrador"""
-    # Verificar si es admin
+    print("\n==== DEBUG ADMIN DASHBOARD ====")
+    print(f"Contenido de la sesión: {dict(request.session)}")
+    
+    # Verificar autenticación
+    if 'access_token' not in request.session or 'user_data' not in request.session:
+        print("No hay sesión activa en admin_dashboard")
+        messages.error(request, 'Por favor, inicia sesión para acceder al panel de administrador.')
+        return redirect('login')
+    
+    # Obtener datos del usuario
     user_data = request.session.get('user_data', {})
+    access_token = request.session.get('access_token', '')
+    
+    print(f"Email del usuario en admin_dashboard: {user_data.get('email')}")
+    
+    # Verificar si es admin
     if user_data.get('email') != 'admin@example.com':
-        messages.error(request, 'Acceso denegado')
+        print("Usuario no es admin en admin_dashboard, redirigiendo a user_dashboard")
+        messages.error(request, 'Acceso denegado. No tienes permisos de administrador.')
         return redirect('user_dashboard')
+    
+    print("Usuario verificado como admin, cargando dashboard de administrador")
     
     # Inicializar estructura de estadísticas
     stats = {
@@ -373,14 +427,18 @@ def admin_dashboard(request):
     }
     
     # Obtener estadísticas de transacciones
-    headers = {'Authorization': f"Bearer {request.session.get('access_token')}"}
+    headers = {'Authorization': f"Bearer {access_token}"}
+    print(f"Headers para solicitud de estadísticas: {headers}")
     
     try:
         # Obtener estadísticas
-        response = requests.get(
-            f"{settings.MICROSERVICES['TRANSACTION_SERVICE_URL']}transactions/stats/", 
-            headers=headers
-        )
+        stats_url = f"{TRANSACTION_SERVICE_URL}transactions/stats/"
+        print(f"Solicitando estadísticas a: {stats_url}")
+        
+        response = requests.get(stats_url, headers=headers)
+        
+        print(f"Respuesta de estadísticas: {response.status_code}")
+        print(f"Contenido de respuesta estadísticas: {response.text[:500]}")
         
         if response.status_code == 200:
             api_stats = response.json()
@@ -388,23 +446,30 @@ def admin_dashboard(request):
             if api_stats:
                 stats.update(api_stats)
         else:
+            print(f"Error al obtener estadísticas: {response.status_code}")
             messages.error(request, 'Error al obtener estadísticas')
     except Exception as e:
+        print(f"Excepción al obtener estadísticas: {str(e)}")
         messages.error(request, f'Error de conexión: {str(e)}')
     
     # Obtener transacciones fraudulentas para alertas
     fraud_transactions = []
     try:
-        response = requests.get(
-            f"{settings.MICROSERVICES['TRANSACTION_SERVICE_URL']}transactions/?status=fraudulent", 
-            headers=headers
-        )
+        fraud_url = f"{TRANSACTION_SERVICE_URL}transactions/?status=fraudulent"
+        print(f"Solicitando transacciones fraudulentas a: {fraud_url}")
+        
+        response = requests.get(fraud_url, headers=headers)
+        
+        print(f"Respuesta de transacciones fraudulentas: {response.status_code}")
         
         if response.status_code == 200:
             fraud_data = response.json()
             fraud_transactions = fraud_data.get('results', [])
+            print(f"Transacciones fraudulentas obtenidas: {len(fraud_transactions)}")
+        else:
+            print(f"Error al obtener transacciones fraudulentas: {response.status_code}")
     except Exception as e:
-        pass  # Silenciosamente manejar errores aquí
+        print(f"Excepción al obtener transacciones fraudulentas: {str(e)}")
     
     context = {
         'user_data': user_data,
@@ -412,16 +477,32 @@ def admin_dashboard(request):
         'fraud_transactions': fraud_transactions
     }
     
+    print("Renderizando template admin_panel/dashboard.html")
     return render(request, 'admin_panel/dashboard.html', context)
 
 @login_required
 def admin_transactions(request):
     """Vista de transacciones para el administrador"""
     # Verificar si es admin
+ # Verificar autenticación
+    if 'access_token' not in request.session or 'user_data' not in request.session:
+        print("No hay sesión activa en admin_transactions")
+        messages.error(request, 'Por favor, inicia sesión para acceder a las transacciones.')
+        return redirect('login')
+    
+    # Obtener datos del usuario
     user_data = request.session.get('user_data', {})
+    access_token = request.session.get('access_token', '')
+    
+    print(f"Email del usuario en admin_transactions: {user_data.get('email')}")
+    
+    # Verificar si es admin
     if user_data.get('email') != 'admin@example.com':
-        messages.error(request, 'Acceso denegado')
+        print("Usuario no es admin en admin_transactions, redirigiendo a user_dashboard")
+        messages.error(request, 'Acceso denegado. No tienes permisos de administrador.')
         return redirect('user_dashboard')
+    
+    print("Usuario verificado como admin, cargando transacciones")
     
     # Obtener parámetros de filtro
     status_filter = request.GET.get('status', '')
