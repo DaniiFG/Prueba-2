@@ -175,7 +175,6 @@ def password_reset_confirm(request, token):
     return render(request, 'registration/password_reset_confirm.html', {'token': token})
 
 # Elimina esta línea
-# @login_required
 def user_dashboard(request):
     """Vista del panel de usuario con transacciones reales"""
     print("\n==== DEBUG USER DASHBOARD ====")
@@ -373,7 +372,7 @@ def transaction_form(request):
     # Si es GET, mostrar formulario
     return render(request, 'user_panel/transaction_form.html', {'user_data': user_data})
 
-@login_required
+
 def admin_dashboard(request):
     """Vista del panel de administrador"""
     print("\n==== DEBUG ADMIN DASHBOARD ====")
@@ -480,7 +479,7 @@ def admin_dashboard(request):
     print("Renderizando template admin_panel/dashboard.html")
     return render(request, 'admin_panel/dashboard.html', context)
 
-@login_required
+
 def admin_transactions(request):
     """Vista de transacciones para el administrador"""
     # Verificar si es admin
