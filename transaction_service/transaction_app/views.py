@@ -244,36 +244,41 @@ Sistema Anti-Fraude
     
     # transaction_service/transaction_app/views.py - Método stats actualizado
 
+# transaction_service/transaction_app/views.py - Método stats corregido
+
     @action(detail=False, methods=['get'])
     def stats(self, request):
         """Obtener estadísticas de transacciones para períodos específicos"""
         from datetime import datetime, timedelta
         from django.utils import timezone
+        from django.db.models import Count, Sum, Q
         
         try:
-            today = timezone.now().date()
+            # Usar timezone.now() para obtener la fecha/hora actual con zona horaria
+            now = timezone.now()
+            today = now.date()
             
             print(f"Calculando estadísticas para la fecha: {today}")
             
             # Estadísticas del día actual
-            today_stats = self._get_period_stats(today, today)
+            today_stats = self._get_period_stats_improved(today, today)
             print(f"Estadísticas de hoy: {today_stats}")
             
             # Estadísticas de la última semana
             week_start = today - timedelta(days=6)
-            week_stats = self._get_period_stats(week_start, today)
+            week_stats = self._get_period_stats_improved(week_start, today)
             print(f"Estadísticas de la semana: {week_stats}")
             
             # Estadísticas del último mes
             month_start = today - timedelta(days=29)
-            month_stats = self._get_period_stats(month_start, today)
+            month_stats = self._get_period_stats_improved(month_start, today)
             print(f"Estadísticas del mes: {month_stats}")
             
             response_data = {
                 'today': today_stats,
                 'last_week': week_stats,
                 'last_month': month_stats,
-                'generated_at': timezone.now().isoformat()
+                'generated_at': now.isoformat()
             }
             
             print(f"Respuesta completa de estadísticas: {response_data}")
@@ -293,57 +298,74 @@ Sistema Anti-Fraude
                 'error': str(e)
             })
     
-    def _get_period_stats(self, start_date, end_date):
-        """Obtener estadísticas para un período dado - MEJORADO"""
+    def _get_period_stats_improved(self, start_date, end_date):
+        """Obtener estadísticas para un período dado - VERSIÓN MEJORADA"""
         from collections import defaultdict
+        from django.db.models import Count, Sum, Q
+        from django.utils import timezone
         
         try:
             print(f"Obteniendo estadísticas desde {start_date} hasta {end_date}")
             
-            # Filtrar transacciones por rango de fechas
+            # Convertir las fechas a datetime con timezone para el filtro
+            start_datetime = timezone.make_aware(
+                datetime.combine(start_date, datetime.min.time()),
+                timezone.get_current_timezone()
+            )
+            end_datetime = timezone.make_aware(
+                datetime.combine(end_date, datetime.max.time()),
+                timezone.get_current_timezone()
+            )
+            
+            # Obtener todas las transacciones del período
             transactions = Transaction.objects.filter(
-                created_at__date__gte=start_date, 
-                created_at__date__lte=end_date
+                created_at__gte=start_datetime,
+                created_at__lte=end_datetime
             )
             
             print(f"Transacciones encontradas: {transactions.count()}")
             
-            # Inicializar contadores
+            # Usar agregación para obtener estadísticas
+            stats_aggregate = transactions.aggregate(
+                total=Count('id'),
+                total_amount=Sum('amount'),
+                legitimate=Count('id', filter=Q(status='legitimate')),
+                possibly_fraudulent=Count('id', filter=Q(status='possibly_fraudulent')),
+                fraudulent=Count('id', filter=Q(status='fraudulent'))
+            )
+            
+            # Preparar estadísticas
             stats = {
-                'total': 0,
-                'legitimate': 0,
-                'possibly_fraudulent': 0,
-                'fraudulent': 0,
-                'total_amount': 0.0,
+                'total': stats_aggregate['total'] or 0,
+                'legitimate': stats_aggregate['legitimate'] or 0,
+                'possibly_fraudulent': stats_aggregate['possibly_fraudulent'] or 0,
+                'fraudulent': stats_aggregate['fraudulent'] or 0,
+                'total_amount': float(stats_aggregate['total_amount'] or 0),
             }
             
-            # Contadores para distribución diaria
-            daily_counts = defaultdict(int)
-            
-            # Procesar cada transacción
-            for transaction in transactions:
-                stats['total'] += 1
-                stats['total_amount'] += float(transaction.amount)
-                
-                # Contar por estado
-                status = transaction.status
-                if status in stats:
-                    stats[status] += 1
-                else:
-                    print(f"Estado desconocido encontrado: {status}")
-                
-                # Distribución diaria
-                transaction_date = transaction.created_at.date()
-                date_key = transaction_date.strftime('%Y-%m-%d')
-                daily_counts[date_key] += 1
-            
-            # Convertir defaultdict a dict normal y asegurarse de que todas las fechas estén incluidas
-            current_date = start_date
+            # Obtener distribución diaria
             daily_distribution = {}
+            current_date = start_date
             
             while current_date <= end_date:
+                # Contar transacciones para cada día
+                day_start = timezone.make_aware(
+                    datetime.combine(current_date, datetime.min.time()),
+                    timezone.get_current_timezone()
+                )
+                day_end = timezone.make_aware(
+                    datetime.combine(current_date, datetime.max.time()),
+                    timezone.get_current_timezone()
+                )
+                
+                day_count = transactions.filter(
+                    created_at__gte=day_start,
+                    created_at__lte=day_end
+                ).count()
+                
                 date_key = current_date.strftime('%Y-%m-%d')
-                daily_distribution[date_key] = daily_counts[date_key]
+                daily_distribution[date_key] = day_count
+                
                 current_date += timedelta(days=1)
             
             stats['daily_distribution'] = daily_distribution
@@ -357,7 +379,6 @@ Sistema Anti-Fraude
             import traceback
             traceback.print_exc()
             
-            # Retornar estructura vacía en caso de error
             return {
                 'total': 0,
                 'legitimate': 0,

@@ -223,9 +223,9 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  # Para producció
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'tu-email@gmail.com'  # Cambiar por tu email
-EMAIL_HOST_PASSWORD = 'tu-app-password'  # Usar App Password de Gmail
-DEFAULT_FROM_EMAIL = 'Sistema Anti-Fraude <tu-email@gmail.com>'
+EMAIL_HOST_USER = 'digitalsolutionssa.ia@gmail.com'  # Cambiar por tu email
+EMAIL_HOST_PASSWORD = 'mttz fxee hgxi zend'  # Usar App Password de Gmail
+DEFAULT_FROM_EMAIL = 'Sistema Anti-Fraude <digitalsolutionssa.ia@gmail.com>'
 
 # URLs de otros servicios
 AUTH_SERVICE_URL = 'http://localhost:8001/api/auth/'

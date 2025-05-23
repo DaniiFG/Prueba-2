@@ -7,6 +7,8 @@ from django.views.decorators.csrf import csrf_exempt
 import requests
 import json
 from datetime import datetime, timedelta
+from django.views.decorators.http import require_http_methods
+from django.http import JsonResponse
 
 # URLs de los microservicios
 AUTH_SERVICE_URL = 'http://localhost:8001/api/auth/'
@@ -698,4 +700,98 @@ def get_fallback_stats(headers):
         print(f"Error en estadísticas de respaldo: {str(e)}")
     
     return stats
+
+
+@require_http_methods(["GET"])
+def get_dashboard_stats(request):
+    """Vista AJAX para obtener estadísticas actualizadas del dashboard"""
+    # Verificar autenticación
+    if 'access_token' not in request.session or 'user_data' not in request.session:
+        return JsonResponse({'error': 'No autorizado'}, status=401)
+    
+    # Verificar si es admin
+    user_data = request.session.get('user_data', {})
+    if user_data.get('email') != 'admin@example.com':
+        return JsonResponse({'error': 'Acceso denegado'}, status=403)
+    
+    access_token = request.session.get('access_token', '')
+    headers = {'Authorization': f"Bearer {access_token}"}
+    
+    try:
+        # Obtener estadísticas del microservicio
+        stats_url = f"{TRANSACTION_SERVICE_URL}transactions/stats/"
+        response = requests.get(stats_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            stats = response.json()
+            return JsonResponse(stats)
+        else:
+            # Si falla, intentar obtener estadísticas básicas
+            fallback_stats = get_fallback_stats(headers)
+            return JsonResponse(fallback_stats)
+            
+    except Exception as e:
+        print(f"Error obteniendo estadísticas AJAX: {str(e)}")
+        return JsonResponse({
+            'error': 'Error al obtener estadísticas',
+            'today': {'total': 0, 'legitimate': 0, 'possibly_fraudulent': 0, 'fraudulent': 0, 'total_amount': 0.0},
+            'last_week': {'total': 0, 'legitimate': 0, 'possibly_fraudulent': 0, 'fraudulent': 0, 'total_amount': 0.0},
+            'last_month': {'total': 0, 'legitimate': 0, 'possibly_fraudulent': 0, 'fraudulent': 0, 'total_amount': 0.0}
+        })
+
+@require_http_methods(["GET"])
+def get_recent_transactions(request):
+    """Vista AJAX para obtener transacciones recientes"""
+    # Verificar autenticación
+    if 'access_token' not in request.session:
+        return JsonResponse({'error': 'No autorizado'}, status=401)
+    
+    access_token = request.session.get('access_token', '')
+    headers = {'Authorization': f"Bearer {access_token}"}
+    
+    try:
+        # Obtener parámetros
+        limit = request.GET.get('limit', 10)
+        status_filter = request.GET.get('status', '')
+        
+        # Construir URL
+        url = f"{TRANSACTION_SERVICE_URL}transactions/?limit={limit}"
+        if status_filter:
+            url += f"&status={status_filter}"
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            transactions = data.get('results', [])
+            
+            # Formatear datos para el frontend
+            formatted_transactions = []
+            for trans in transactions:
+                formatted_transactions.append({
+                    'id': str(trans['id'])[:8],
+                    'created_at': trans['created_at'],
+                    'sender_name': trans['sender_name'],
+                    'receiver_name': trans['receiver_name'],
+                    'amount': float(trans['amount']),
+                    'status': trans['status'],
+                    'fraud_score': trans.get('fraud_score', 0)
+                })
+            
+            return JsonResponse({
+                'success': True,
+                'transactions': formatted_transactions
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Error al obtener transacciones'
+            })
+            
+    except Exception as e:
+        print(f"Error obteniendo transacciones AJAX: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
 # Create your views here.

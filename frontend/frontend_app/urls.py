@@ -20,4 +20,6 @@ urlpatterns = [
     
     # API para AJAX
     path('api/update-transaction-status/', views.update_transaction_status, name='update_transaction_status'),
+    path('api/dashboard/stats/', views.get_dashboard_stats, name='dashboard_stats'),
+    path('api/transactions/recent/', views.get_recent_transactions, name='recent_transactions'),
 ]

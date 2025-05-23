@@ -15,6 +15,15 @@
         position: relative;
         height: 300px;
     }
+    .debug-info {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 15px;
+        margin-top: 20px;
+        font-family: monospace;
+        font-size: 12px;
+    }
 </style>
 {% endblock %}
 
@@ -25,6 +34,9 @@
         <p class="text-muted">Monitoreo de transacciones y detección de fraude</p>
     </div>
     <div class="col-md-6 text-md-end">
+        <button class="btn btn-outline-primary me-2" onclick="refreshDashboard()">
+            <i class="fas fa-sync-alt me-2"></i>Actualizar
+        </button>
         <a href="{% url 'admin_transactions' %}" class="btn btn-primary">
             <i class="fas fa-list me-2"></i>Ver todas las transacciones
         </a>
@@ -126,6 +138,9 @@
                 <div class="chart-container">
                     <canvas id="statusChart"></canvas>
                 </div>
+                <div class="mt-3 text-center">
+                    <small class="text-muted">Últimos 30 días</small>
+                </div>
             </div>
         </div>
     </div>
@@ -194,15 +209,18 @@
 </div>
 
 <!-- Información de Debug (Solo en desarrollo) -->
-{% if debug %}
-<div class="row">
+{% if DEBUG %}
+<div class="row mt-4">
     <div class="col-12">
         <div class="card shadow">
             <div class="card-header">
                 <h6 class="m-0 font-weight-bold text-info">Información de Debug</h6>
             </div>
             <div class="card-body">
-                <pre>{{ stats|pprint }}</pre>
+                <div class="debug-info">
+                    <h6>Estadísticas recibidas:</h6>
+                    <pre>{{ stats|pprint }}</pre>
+                </div>
             </div>
         </div>
     </div>
@@ -212,48 +230,53 @@
 
 {% block extra_js %}
 <script>
-    // Inicializar datos para evitar errores
-    let monthlyData = {};
-    let legitimateCount = 0;
-    let possiblyFraudulentCount = 0;
-    let fraudulentCount = 0;
-    
-    // Preparar los datos desde Django con validación
-    {% if stats.last_month.daily_distribution %}
-    try {
-        monthlyData = {{ stats.last_month.daily_distribution|safe }};
-        console.log('Datos mensuales cargados:', monthlyData);
-    } catch (e) {
-        console.error('Error al cargar datos mensuales:', e);
-        monthlyData = {};
+    // Variables globales para los gráficos
+    let transactionsChart = null;
+    let statusChart = null;
+
+    // Función para actualizar el dashboard
+    function refreshDashboard() {
+        location.reload();
     }
-    {% endif %}
-    
-    // Cargar contadores con valores por defecto
-    legitimateCount = {{ stats.last_month.legitimate|default:0 }};
-    possiblyFraudulentCount = {{ stats.last_month.possibly_fraudulent|default:0 }};
-    fraudulentCount = {{ stats.last_month.fraudulent|default:0 }};
-    
-    console.log('Contadores cargados:', {
-        legitimate: legitimateCount,
-        possibly_fraudulent: possiblyFraudulentCount,
-        fraudulent: fraudulentCount
-    });
-    
-    // Verificar que Chart.js esté disponible
-    if (typeof Chart === 'undefined') {
-        console.error('Chart.js no está cargado');
-    } else {
-        // Gráfico de transacciones por día
+
+    // Función para inicializar los gráficos
+    function initializeCharts() {
+        // Datos desde Django
+        const statsData = {{ stats|safe|default:'{}' }};
+        
+        console.log('Datos de estadísticas recibidos:', statsData);
+        
+        // Verificar que tenemos datos
+        if (!statsData.last_month || !statsData.last_month.daily_distribution) {
+            console.error('No hay datos de distribución diaria disponibles');
+            return;
+        }
+        
+        // Preparar datos para el gráfico de líneas
+        const dailyData = statsData.last_month.daily_distribution || {};
+        const sortedDates = Object.keys(dailyData).sort();
+        const dailyValues = sortedDates.map(date => dailyData[date] || 0);
+        
+        // Formatear las fechas para mostrar
+        const formattedDates = sortedDates.map(date => {
+            const [year, month, day] = date.split('-');
+            return `${day}/${month}`;
+        });
+        
+        // Configurar gráfico de transacciones por día
         const transactionsCtx = document.getElementById('transactionsChart');
-        if (transactionsCtx) {
-            const transactionsChart = new Chart(transactionsCtx, {
+        if (transactionsCtx && sortedDates.length > 0) {
+            if (transactionsChart) {
+                transactionsChart.destroy();
+            }
+            
+            transactionsChart = new Chart(transactionsCtx, {
                 type: 'line',
                 data: {
-                    labels: Object.keys(monthlyData).sort(),
+                    labels: formattedDates,
                     datasets: [{
                         label: 'Número de Transacciones',
-                        data: Object.keys(monthlyData).sort().map(key => monthlyData[key] || 0),
+                        data: dailyValues,
                         backgroundColor: 'rgba(78, 115, 223, 0.05)',
                         borderColor: 'rgba(78, 115, 223, 1)',
                         pointRadius: 3,
@@ -270,16 +293,33 @@
                 },
                 options: {
                     maintainAspectRatio: false,
+                    responsive: true,
                     plugins: {
                         legend: {
                             display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    const index = context[0].dataIndex;
+                                    return `Fecha: ${sortedDates[index]}`;
+                                }
+                            }
                         }
                     },
                     scales: {
                         y: {
                             beginAtZero: true,
                             ticks: {
-                                precision: 0
+                                precision: 0,
+                                callback: function(value) {
+                                    return Math.floor(value);
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
                             }
                         }
                     }
@@ -287,10 +327,25 @@
             });
         }
         
-        // Gráfico de distribución por estado
+        // Configurar gráfico de distribución por estado
         const statusCtx = document.getElementById('statusChart');
         if (statusCtx) {
-            const statusChart = new Chart(statusCtx, {
+            const monthStats = statsData.last_month || {};
+            const legitimateCount = monthStats.legitimate || 0;
+            const possiblyFraudulentCount = monthStats.possibly_fraudulent || 0;
+            const fraudulentCount = monthStats.fraudulent || 0;
+            
+            console.log('Datos para gráfico de estado:', {
+                legitimate: legitimateCount,
+                possibly_fraudulent: possiblyFraudulentCount,
+                fraudulent: fraudulentCount
+            });
+            
+            if (statusChart) {
+                statusChart.destroy();
+            }
+            
+            statusChart = new Chart(statusCtx, {
                 type: 'doughnut',
                 data: {
                     labels: ['Legítimas', 'Posible Fraude', 'Fraudulentas'],
@@ -298,14 +353,31 @@
                         data: [legitimateCount, possiblyFraudulentCount, fraudulentCount],
                         backgroundColor: ['#1cc88a', '#f6c23e', '#e74a3b'],
                         hoverBackgroundColor: ['#17a673', '#dda20a', '#be2617'],
-                        hoverBorderColor: 'rgba(234, 236, 244, 1)'
+                        hoverBorderColor: 'rgba(234, 236, 244, 1)',
+                        borderWidth: 2
                     }]
                 },
                 options: {
                     maintainAspectRatio: false,
+                    responsive: true,
                     plugins: {
                         legend: {
-                            position: 'bottom'
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                usePointStyle: true
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                    return `${label}: ${value} (${percentage}%)`;
+                                }
+                            }
                         }
                     },
                     cutout: '70%'
@@ -313,11 +385,111 @@
             });
         }
     }
+
+    // Esperar a que el DOM esté listo
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM cargado, inicializando gráficos...');
+        
+        // Verificar que Chart.js esté disponible
+        if (typeof Chart === 'undefined') {
+            console.error('Chart.js no está cargado');
+            return;
+        }
+        
+        // Inicializar gráficos
+        initializeCharts();
+    });
     
-    // Actualizar datos cada 30 segundos
+    // Auto-actualizar cada 60 segundos
     setInterval(function() {
-        console.log('Actualizando dashboard...');
-        location.reload();
-    }, 30000);
+        console.log('Auto-actualizando dashboard...');
+        refreshDashboard();
+    }, 60000);
 </script>
 {% endblock %}
+
+<script>
+// Función para actualizar estadísticas via AJAX
+function updateDashboardStats() {
+    // Obtener el token de acceso de la sesión
+    const accessToken = '{{ request.session.access_token }}';
+    
+    fetch('http://localhost:8002/api/transactions/transactions/stats/', {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Nuevas estadísticas recibidas:', data);
+        
+        // Actualizar tarjetas de estadísticas
+        if (data.today) {
+            document.querySelector('.stat-card:nth-child(1) .h5').textContent = data.today.total || 0;
+            document.querySelector('.stat-card:nth-child(2) .h5').textContent = `${(data.today.total_amount || 0).toFixed(2)}`;
+            document.querySelector('.stat-card:nth-child(3) .h5').textContent = data.today.possibly_fraudulent || 0;
+            document.querySelector('.stat-card:nth-child(4) .h5').textContent = data.today.fraudulent || 0;
+        }
+        
+        // Actualizar gráficos
+        if (data.last_month && transactionsChart) {
+            updateTransactionsChart(data.last_month.daily_distribution);
+        }
+        
+        if (data.last_month && statusChart) {
+            updateStatusChart(data.last_month);
+        }
+    })
+    .catch(error => {
+        console.error('Error actualizando estadísticas:', error);
+    });
+}
+
+// Función para actualizar el gráfico de transacciones
+function updateTransactionsChart(dailyDistribution) {
+    if (!dailyDistribution || !transactionsChart) return;
+    
+    const sortedDates = Object.keys(dailyDistribution).sort();
+    const dailyValues = sortedDates.map(date => dailyDistribution[date] || 0);
+    
+    const formattedDates = sortedDates.map(date => {
+        const [year, month, day] = date.split('-');
+        return `${day}/${month}`;
+    });
+    
+    transactionsChart.data.labels = formattedDates;
+    transactionsChart.data.datasets[0].data = dailyValues;
+    transactionsChart.update();
+}
+
+// Función para actualizar el gráfico de estado
+function updateStatusChart(monthStats) {
+    if (!monthStats || !statusChart) return;
+    
+    const newData = [
+        monthStats.legitimate || 0,
+        monthStats.possibly_fraudulent || 0,
+        monthStats.fraudulent || 0
+    ];
+    
+    statusChart.data.datasets[0].data = newData;
+    statusChart.update();
+}
+
+// Actualizar cada 30 segundos
+setInterval(updateDashboardStats, 30000);
+
+// También actualizar cuando se hace clic en el botón de actualizar
+document.addEventListener('DOMContentLoaded', function() {
+    const refreshButton = document.querySelector('button[onclick="refreshDashboard()"]');
+    if (refreshButton) {
+        refreshButton.onclick = function() {
+            updateDashboardStats();
+            return false; // Prevenir recarga de página
+        };
+    }
+});
+</script>
