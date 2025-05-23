@@ -40,7 +40,7 @@
                     <div class="col mr-2">
                         <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
                             Transacciones Hoy</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.total }}</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.total|default:0 }}</div>
                     </div>
                     <div class="col-auto">
                         <i class="fas fa-calendar fa-2x text-gray-300"></i>
@@ -57,7 +57,7 @@
                     <div class="col mr-2">
                         <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
                             Monto Total (Hoy)</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800">${{ stats.today.total_amount }}</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">${{ stats.today.total_amount|default:0|floatformat:2 }}</div>
                     </div>
                     <div class="col-auto">
                         <i class="fas fa-dollar-sign fa-2x text-gray-300"></i>
@@ -74,7 +74,7 @@
                     <div class="col mr-2">
                         <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
                             Posible Fraude (Hoy)</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.possibly_fraudulent }}</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.possibly_fraudulent|default:0 }}</div>
                     </div>
                     <div class="col-auto">
                         <i class="fas fa-exclamation-triangle fa-2x text-gray-300"></i>
@@ -91,7 +91,7 @@
                     <div class="col mr-2">
                         <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">
                             Fraude Detectado (Hoy)</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.fraudulent }}</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.fraudulent|default:0 }}</div>
                     </div>
                     <div class="col-auto">
                         <i class="fas fa-bug fa-2x text-gray-300"></i>
@@ -192,6 +192,22 @@
         </div>
     </div>
 </div>
+
+<!-- Información de Debug (Solo en desarrollo) -->
+{% if debug %}
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header">
+                <h6 class="m-0 font-weight-bold text-info">Información de Debug</h6>
+            </div>
+            <div class="card-body">
+                <pre>{{ stats|pprint }}</pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -202,86 +218,106 @@
     let possiblyFraudulentCount = 0;
     let fraudulentCount = 0;
     
-    // Preparar los datos desde Django
-    {% if stats.last_month and stats.last_month.daily_distribution %}
-        monthlyData = JSON.parse('{{ stats.last_month.daily_distribution|escapejs }}');
+    // Preparar los datos desde Django con validación
+    {% if stats.last_month.daily_distribution %}
+    try {
+        monthlyData = {{ stats.last_month.daily_distribution|safe }};
+        console.log('Datos mensuales cargados:', monthlyData);
+    } catch (e) {
+        console.error('Error al cargar datos mensuales:', e);
+        monthlyData = {};
+    }
     {% endif %}
     
-    {% if stats.last_month and stats.last_month.legitimate %}
-        legitimateCount = {{ stats.last_month.legitimate }};
-    {% endif %}
+    // Cargar contadores con valores por defecto
+    legitimateCount = {{ stats.last_month.legitimate|default:0 }};
+    possiblyFraudulentCount = {{ stats.last_month.possibly_fraudulent|default:0 }};
+    fraudulentCount = {{ stats.last_month.fraudulent|default:0 }};
     
-    {% if stats.last_month and stats.last_month.possibly_fraudulent %}
-        possiblyFraudulentCount = {{ stats.last_month.possibly_fraudulent }};
-    {% endif %}
+    console.log('Contadores cargados:', {
+        legitimate: legitimateCount,
+        possibly_fraudulent: possiblyFraudulentCount,
+        fraudulent: fraudulentCount
+    });
     
-    {% if stats.last_month and stats.last_month.fraudulent %}
-        fraudulentCount = {{ stats.last_month.fraudulent }};
-    {% endif %}
-    
-    // Gráfico de transacciones por día
-    const transactionsCtx = document.getElementById('transactionsChart').getContext('2d');
-    const transactionsChart = new Chart(transactionsCtx, {
-        type: 'line',
-        data: {
-            labels: Object.keys(monthlyData),
-            datasets: [{
-                label: 'Número de Transacciones',
-                data: Object.values(monthlyData),
-                backgroundColor: 'rgba(78, 115, 223, 0.05)',
-                borderColor: 'rgba(78, 115, 223, 1)',
-                pointRadius: 3,
-                pointBackgroundColor: 'rgba(78, 115, 223, 1)',
-                pointBorderColor: 'rgba(78, 115, 223, 1)',
-                pointHoverRadius: 5,
-                pointHoverBackgroundColor: 'rgba(78, 115, 223, 1)',
-                pointHoverBorderColor: 'rgba(78, 115, 223, 1)',
-                pointHitRadius: 10,
-                pointBorderWidth: 2,
-                tension: 0.3,
-                fill: true
-            }]
-        },
-        options: {
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        precision: 0
+    // Verificar que Chart.js esté disponible
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js no está cargado');
+    } else {
+        // Gráfico de transacciones por día
+        const transactionsCtx = document.getElementById('transactionsChart');
+        if (transactionsCtx) {
+            const transactionsChart = new Chart(transactionsCtx, {
+                type: 'line',
+                data: {
+                    labels: Object.keys(monthlyData).sort(),
+                    datasets: [{
+                        label: 'Número de Transacciones',
+                        data: Object.keys(monthlyData).sort().map(key => monthlyData[key] || 0),
+                        backgroundColor: 'rgba(78, 115, 223, 0.05)',
+                        borderColor: 'rgba(78, 115, 223, 1)',
+                        pointRadius: 3,
+                        pointBackgroundColor: 'rgba(78, 115, 223, 1)',
+                        pointBorderColor: 'rgba(78, 115, 223, 1)',
+                        pointHoverRadius: 5,
+                        pointHoverBackgroundColor: 'rgba(78, 115, 223, 1)',
+                        pointHoverBorderColor: 'rgba(78, 115, 223, 1)',
+                        pointHitRadius: 10,
+                        pointBorderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0
+                            }
+                        }
                     }
                 }
-            }
+            });
         }
-    });
-    
-    // Gráfico de distribución por estado
-    const statusCtx = document.getElementById('statusChart').getContext('2d');
-    const statusChart = new Chart(statusCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Legítimas', 'Posible Fraude', 'Fraudulentas'],
-            datasets: [{
-                data: [legitimateCount, possiblyFraudulentCount, fraudulentCount],
-                backgroundColor: ['#1cc88a', '#f6c23e', '#e74a3b'],
-                hoverBackgroundColor: ['#17a673', '#dda20a', '#be2617'],
-                hoverBorderColor: 'rgba(234, 236, 244, 1)'
-            }]
-        },
-        options: {
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom'
+        
+        // Gráfico de distribución por estado
+        const statusCtx = document.getElementById('statusChart');
+        if (statusCtx) {
+            const statusChart = new Chart(statusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Legítimas', 'Posible Fraude', 'Fraudulentas'],
+                    datasets: [{
+                        data: [legitimateCount, possiblyFraudulentCount, fraudulentCount],
+                        backgroundColor: ['#1cc88a', '#f6c23e', '#e74a3b'],
+                        hoverBackgroundColor: ['#17a673', '#dda20a', '#be2617'],
+                        hoverBorderColor: 'rgba(234, 236, 244, 1)'
+                    }]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    },
+                    cutout: '70%'
                 }
-            },
-            cutout: '70%'
+            });
         }
-    });
+    }
+    
+    // Actualizar datos cada 30 segundos
+    setInterval(function() {
+        console.log('Actualizando dashboard...');
+        location.reload();
+    }, 30000);
 </script>
 {% endblock %}

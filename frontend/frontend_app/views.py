@@ -448,11 +448,13 @@ def admin_dashboard(request):
                         print(f"Estadísticas {period} actualizadas: {stats[period]}")
         else:
             print(f"Error al obtener estadísticas: {response.status_code}")
-            messages.warning(request, 'No se pudieron cargar las estadísticas completas')
+            # Obtener datos básicos directamente de todas las transacciones
+            stats = get_fallback_stats(headers)
             
     except Exception as e:
         print(f"Excepción al obtener estadísticas: {str(e)}")
-        messages.warning(request, f'Error de conexión con estadísticas: {str(e)}')
+        # Usar datos de respaldo
+        stats = get_fallback_stats(headers)
     
     # Obtener transacciones fraudulentas recientes para alertas
     fraud_transactions = []
@@ -629,5 +631,71 @@ def update_transaction_status(request):
             return JsonResponse({'success': False, 'error': str(e)})
     
     return JsonResponse({'success': False, 'error': 'Método no permitido'})
-
+def get_fallback_stats(headers):
+    """Obtener estadísticas básicas si el endpoint de stats no funciona"""
+    from datetime import datetime, timedelta
+    
+    stats = {
+        'today': {'total': 0, 'legitimate': 0, 'possibly_fraudulent': 0, 'fraudulent': 0, 'total_amount': 0.0},
+        'last_week': {'total': 0, 'legitimate': 0, 'possibly_fraudulent': 0, 'fraudulent': 0, 'total_amount': 0.0, 'daily_distribution': {}},
+        'last_month': {'total': 0, 'legitimate': 0, 'possibly_fraudulent': 0, 'fraudulent': 0, 'total_amount': 0.0, 'daily_distribution': {}}
+    }
+    
+    try:
+        # Obtener todas las transacciones recientes
+        all_transactions_url = f"{TRANSACTION_SERVICE_URL}transactions/?limit=100"
+        response = requests.get(all_transactions_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            transactions = data.get('results', [])
+            
+            today = datetime.now().date()
+            week_ago = today - timedelta(days=7)
+            month_ago = today - timedelta(days=30)
+            
+            # Procesar transacciones
+            daily_counts = {}
+            
+            for transaction in transactions:
+                try:
+                    # Parsear fecha de la transacción
+                    trans_date_str = transaction.get('created_at', '')
+                    trans_date = datetime.fromisoformat(trans_date_str.replace('Z', '+00:00')).date()
+                    amount = float(transaction.get('amount', 0))
+                    status = transaction.get('status', 'legitimate')
+                    
+                    # Estadísticas de hoy
+                    if trans_date == today:
+                        stats['today']['total'] += 1
+                        stats['today']['total_amount'] += amount
+                        stats['today'][status] = stats['today'].get(status, 0) + 1
+                    
+                    # Estadísticas de la semana
+                    if trans_date >= week_ago:
+                        stats['last_week']['total'] += 1
+                        stats['last_week']['total_amount'] += amount
+                        stats['last_week'][status] = stats['last_week'].get(status, 0) + 1
+                    
+                    # Estadísticas del mes
+                    if trans_date >= month_ago:
+                        stats['last_month']['total'] += 1
+                        stats['last_month']['total_amount'] += amount
+                        stats['last_month'][status] = stats['last_month'].get(status, 0) + 1
+                        
+                        # Distribución diaria para gráficos
+                        date_key = trans_date.strftime('%Y-%m-%d')
+                        daily_counts[date_key] = daily_counts.get(date_key, 0) + 1
+                        
+                except Exception as e:
+                    print(f"Error procesando transacción: {e}")
+                    continue
+            
+            stats['last_month']['daily_distribution'] = daily_counts
+            stats['last_week']['daily_distribution'] = {k: v for k, v in daily_counts.items() if datetime.strptime(k, '%Y-%m-%d').date() >= week_ago}
+            
+    except Exception as e:
+        print(f"Error en estadísticas de respaldo: {str(e)}")
+    
+    return stats
 # Create your views here.

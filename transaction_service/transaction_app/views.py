@@ -242,27 +242,130 @@ Sistema Anti-Fraude
         
         return Response(TransactionSerializer(transaction).data)
     
+    # transaction_service/transaction_app/views.py - Método stats actualizado
+
     @action(detail=False, methods=['get'])
     def stats(self, request):
         """Obtener estadísticas de transacciones para períodos específicos"""
-        today = timezone.now().date()
+        from datetime import datetime, timedelta
+        from django.utils import timezone
         
-        # Estadísticas del día actual
-        today_stats = self._get_period_stats(today, today)
+        try:
+            today = timezone.now().date()
+            
+            print(f"Calculando estadísticas para la fecha: {today}")
+            
+            # Estadísticas del día actual
+            today_stats = self._get_period_stats(today, today)
+            print(f"Estadísticas de hoy: {today_stats}")
+            
+            # Estadísticas de la última semana
+            week_start = today - timedelta(days=6)
+            week_stats = self._get_period_stats(week_start, today)
+            print(f"Estadísticas de la semana: {week_stats}")
+            
+            # Estadísticas del último mes
+            month_start = today - timedelta(days=29)
+            month_stats = self._get_period_stats(month_start, today)
+            print(f"Estadísticas del mes: {month_stats}")
+            
+            response_data = {
+                'today': today_stats,
+                'last_week': week_stats,
+                'last_month': month_stats,
+                'generated_at': timezone.now().isoformat()
+            }
+            
+            print(f"Respuesta completa de estadísticas: {response_data}")
+            
+            return Response(response_data)
+            
+        except Exception as e:
+            print(f"Error en el endpoint de estadísticas: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Retornar estructura vacía en caso de error
+            return Response({
+                'today': {'total': 0, 'legitimate': 0, 'possibly_fraudulent': 0, 'fraudulent': 0, 'total_amount': 0.0},
+                'last_week': {'total': 0, 'legitimate': 0, 'possibly_fraudulent': 0, 'fraudulent': 0, 'total_amount': 0.0, 'daily_distribution': {}},
+                'last_month': {'total': 0, 'legitimate': 0, 'possibly_fraudulent': 0, 'fraudulent': 0, 'total_amount': 0.0, 'daily_distribution': {}},
+                'error': str(e)
+            })
+    
+    def _get_period_stats(self, start_date, end_date):
+        """Obtener estadísticas para un período dado - MEJORADO"""
+        from collections import defaultdict
         
-        # Estadísticas de la última semana
-        week_start = today - timedelta(days=6)
-        week_stats = self._get_period_stats(week_start, today)
-        
-        # Estadísticas del último mes
-        month_start = today - timedelta(days=29)
-        month_stats = self._get_period_stats(month_start, today)
-        
-        return Response({
-            'today': today_stats,
-            'last_week': week_stats,
-            'last_month': month_stats
-        })
+        try:
+            print(f"Obteniendo estadísticas desde {start_date} hasta {end_date}")
+            
+            # Filtrar transacciones por rango de fechas
+            transactions = Transaction.objects.filter(
+                created_at__date__gte=start_date, 
+                created_at__date__lte=end_date
+            )
+            
+            print(f"Transacciones encontradas: {transactions.count()}")
+            
+            # Inicializar contadores
+            stats = {
+                'total': 0,
+                'legitimate': 0,
+                'possibly_fraudulent': 0,
+                'fraudulent': 0,
+                'total_amount': 0.0,
+            }
+            
+            # Contadores para distribución diaria
+            daily_counts = defaultdict(int)
+            
+            # Procesar cada transacción
+            for transaction in transactions:
+                stats['total'] += 1
+                stats['total_amount'] += float(transaction.amount)
+                
+                # Contar por estado
+                status = transaction.status
+                if status in stats:
+                    stats[status] += 1
+                else:
+                    print(f"Estado desconocido encontrado: {status}")
+                
+                # Distribución diaria
+                transaction_date = transaction.created_at.date()
+                date_key = transaction_date.strftime('%Y-%m-%d')
+                daily_counts[date_key] += 1
+            
+            # Convertir defaultdict a dict normal y asegurarse de que todas las fechas estén incluidas
+            current_date = start_date
+            daily_distribution = {}
+            
+            while current_date <= end_date:
+                date_key = current_date.strftime('%Y-%m-%d')
+                daily_distribution[date_key] = daily_counts[date_key]
+                current_date += timedelta(days=1)
+            
+            stats['daily_distribution'] = daily_distribution
+            
+            print(f"Estadísticas calculadas: {stats}")
+            
+            return stats
+            
+        except Exception as e:
+            print(f"Error al calcular estadísticas del período: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Retornar estructura vacía en caso de error
+            return {
+                'total': 0,
+                'legitimate': 0,
+                'possibly_fraudulent': 0,
+                'fraudulent': 0,
+                'total_amount': 0.0,
+                'daily_distribution': {}
+            }
     
     @action(detail=False, methods=['get'])
     def filter_by_amount(self, request):
