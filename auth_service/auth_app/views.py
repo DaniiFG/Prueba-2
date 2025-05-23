@@ -20,6 +20,11 @@ from .serializers import (
     PasswordResetConfirmSerializer
 )
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+
 class UserRegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -138,3 +143,24 @@ class PasswordResetConfirmView(APIView):
         }, status=status.HTTP_200_OK)
 
 # Create your views here.
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_user_info(request, user_id):
+    """Endpoint para obtener información básica de un usuario por ID"""
+    try:
+        user = get_object_or_404(User, id=user_id)
+        
+        user_data = {
+            'id': user.id,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'email': user.email,
+            'phone_number': user.phone_number,
+            'balance': float(user.balance)
+        }
+        
+        return JsonResponse(user_data)
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=404)

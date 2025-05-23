@@ -212,3 +212,24 @@ LOGGING = {
         },
     },
 }
+
+# Agregar esta configuración a transaction_service/transaction_service/settings.py
+
+# Email Configuration para notificaciones de transacciones
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  # Para producción
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Para desarrollo (muestra en consola)
+
+# Configuración Gmail (ejemplo)
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'tu-email@gmail.com'  # Cambiar por tu email
+EMAIL_HOST_PASSWORD = 'tu-app-password'  # Usar App Password de Gmail
+DEFAULT_FROM_EMAIL = 'Sistema Anti-Fraude <tu-email@gmail.com>'
+
+# URLs de otros servicios
+AUTH_SERVICE_URL = 'http://localhost:8001/api/auth/'
+FRAUD_ANALYSIS_SERVICE_URL = 'http://localhost:8003/api/fraud/'
+
+# Configuración adicional para el contexto del frontend
+FRONTEND_URL = 'http://localhost:8000'  # URL del frontend para enlaces

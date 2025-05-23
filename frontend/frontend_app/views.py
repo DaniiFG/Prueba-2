@@ -374,9 +374,8 @@ def transaction_form(request):
 
 
 def admin_dashboard(request):
-    """Vista del panel de administrador"""
+    """Vista del panel de administrador con estadísticas reales"""
     print("\n==== DEBUG ADMIN DASHBOARD ====")
-    print(f"Contenido de la sesión: {dict(request.session)}")
     
     # Verificar autenticación
     if 'access_token' not in request.session or 'user_data' not in request.session:
@@ -398,7 +397,7 @@ def admin_dashboard(request):
     
     print("Usuario verificado como admin, cargando dashboard de administrador")
     
-    # Inicializar estructura de estadísticas
+    # Inicializar estructura de estadísticas con valores por defecto
     stats = {
         'today': {
             'total': 0,
@@ -425,39 +424,43 @@ def admin_dashboard(request):
         }
     }
     
-    # Obtener estadísticas de transacciones
+    # Obtener estadísticas de transacciones del microservicio
     headers = {'Authorization': f"Bearer {access_token}"}
     print(f"Headers para solicitud de estadísticas: {headers}")
     
     try:
-        # Obtener estadísticas
+        # Obtener estadísticas generales
         stats_url = f"{TRANSACTION_SERVICE_URL}transactions/stats/"
         print(f"Solicitando estadísticas a: {stats_url}")
         
-        response = requests.get(stats_url, headers=headers)
+        response = requests.get(stats_url, headers=headers, timeout=10)
         
         print(f"Respuesta de estadísticas: {response.status_code}")
         print(f"Contenido de respuesta estadísticas: {response.text[:500]}")
         
         if response.status_code == 200:
             api_stats = response.json()
-            # Actualizar con datos reales si están disponibles
             if api_stats:
-                stats.update(api_stats)
+                # Actualizar stats con datos reales
+                for period in ['today', 'last_week', 'last_month']:
+                    if period in api_stats:
+                        stats[period].update(api_stats[period])
+                        print(f"Estadísticas {period} actualizadas: {stats[period]}")
         else:
             print(f"Error al obtener estadísticas: {response.status_code}")
-            messages.error(request, 'Error al obtener estadísticas')
+            messages.warning(request, 'No se pudieron cargar las estadísticas completas')
+            
     except Exception as e:
         print(f"Excepción al obtener estadísticas: {str(e)}")
-        messages.error(request, f'Error de conexión: {str(e)}')
+        messages.warning(request, f'Error de conexión con estadísticas: {str(e)}')
     
-    # Obtener transacciones fraudulentas para alertas
+    # Obtener transacciones fraudulentas recientes para alertas
     fraud_transactions = []
     try:
-        fraud_url = f"{TRANSACTION_SERVICE_URL}transactions/?status=fraudulent"
+        fraud_url = f"{TRANSACTION_SERVICE_URL}transactions/?status=fraudulent&limit=10"
         print(f"Solicitando transacciones fraudulentas a: {fraud_url}")
         
-        response = requests.get(fraud_url, headers=headers)
+        response = requests.get(fraud_url, headers=headers, timeout=10)
         
         print(f"Respuesta de transacciones fraudulentas: {response.status_code}")
         
@@ -467,13 +470,54 @@ def admin_dashboard(request):
             print(f"Transacciones fraudulentas obtenidas: {len(fraud_transactions)}")
         else:
             print(f"Error al obtener transacciones fraudulentas: {response.status_code}")
+            
     except Exception as e:
         print(f"Excepción al obtener transacciones fraudulentas: {str(e)}")
+    
+    # Obtener también transacciones posiblemente fraudulentas
+    possibly_fraud_transactions = []
+    try:
+        possibly_fraud_url = f"{TRANSACTION_SERVICE_URL}transactions/?status=possibly_fraudulent&limit=5"
+        response = requests.get(possibly_fraud_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            possibly_fraud_data = response.json()
+            possibly_fraud_transactions = possibly_fraud_data.get('results', [])
+            print(f"Transacciones posiblemente fraudulentas obtenidas: {len(possibly_fraud_transactions)}")
+    except Exception as e:
+        print(f"Error al obtener transacciones posiblemente fraudulentas: {str(e)}")
+    
+    # Combinar transacciones para alertas (fraudulentas + posiblemente fraudulentas)
+    all_alert_transactions = fraud_transactions + possibly_fraud_transactions
+    
+    # Obtener estadísticas del servicio de análisis de fraude
+    fraud_analysis_stats = {}
+    try:
+        fraud_stats_url = f"{FRAUD_SERVICE_URL}features/?limit=100"
+        response = requests.get(fraud_stats_url, timeout=10)
+        
+        if response.status_code == 200:
+            fraud_data = response.json()
+            features = fraud_data.get('results', [])
+            
+            # Calcular estadísticas básicas del análisis
+            if features:
+                fraud_analysis_stats = {
+                    'total_analyzed': len(features),
+                    'avg_fraud_score': sum([f.get('fraud_score', 0) for f in features]) / len(features),
+                    'high_risk_count': len([f for f in features if f.get('fraud_score', 0) > 0.7]),
+                    'model_versions': list(set([f.get('model_version', 'unknown') for f in features]))
+                }
+                print(f"Estadísticas de análisis de fraude: {fraud_analysis_stats}")
+                
+    except Exception as e:
+        print(f"Error al obtener estadísticas de análisis: {str(e)}")
     
     context = {
         'user_data': user_data,
         'stats': stats,
-        'fraud_transactions': fraud_transactions
+        'fraud_transactions': all_alert_transactions,
+        'fraud_analysis_stats': fraud_analysis_stats
     }
     
     print("Renderizando template admin_panel/dashboard.html")

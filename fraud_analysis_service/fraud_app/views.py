@@ -56,9 +56,7 @@ class FraudAnalysisView(APIView):
             features = self._extract_features(sender_id, amount, created_at)
             print(f"Características extraídas: {features}")
             
-            # Resto del código...
-            
-            # Crear transacción
+            # Crear entrada en TransactionFeature
             try:
                 transaction_feature = TransactionFeature.objects.create(
                     transaction_id=transaction_id,
@@ -95,7 +93,7 @@ class FraudAnalysisView(APIView):
                 prediction = model.predict(model_input)
                 print(f"Predicción del modelo: {prediction}")
                 
-                # Si se creó la transacción, actualizarla
+                # Actualizar TransactionFeature con los resultados
                 if 'transaction_feature' in locals():
                     transaction_feature.fraud_score = prediction['fraud_score']
                     transaction_feature.is_fraud = prediction['is_fraud']
@@ -104,6 +102,7 @@ class FraudAnalysisView(APIView):
                 
                 # Actualizar perfil de usuario
                 self._update_user_profile(sender_id, amount, created_at, prediction['is_fraud'])
+                
             except Exception as e:
                 print(f"Error en la predicción: {str(e)}")
                 # Usar valores predeterminados si hay error
@@ -135,6 +134,56 @@ class FraudAnalysisView(APIView):
         except Exception as e:
             print(f"Error general en análisis de fraude: {str(e)}")
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _extract_features(self, sender_id, amount, created_at):
+        """Extraer características para el análisis"""
+        # Características temporales
+        hour_of_day = created_at.hour
+        day_of_week = created_at.weekday()
+        is_weekend = day_of_week >= 5
+        
+        # Obtener o crear perfil del usuario
+        user_profile, created = UserActivityProfile.objects.get_or_create(user_id=sender_id)
+        
+        # Características del remitente
+        sender_avg_amount = user_profile.avg_transaction_amount
+        sender_transaction_count = user_profile.total_transactions
+        
+        # Calcular frecuencia de transacciones (transacciones por día)
+        if user_profile.last_active and user_profile.total_transactions > 0:
+            days_active = max(1, (timezone.now() - user_profile.last_active).days)
+            sender_transaction_frequency = user_profile.total_transactions / days_active
+        else:
+            sender_transaction_frequency = 0.0
+        
+        # Desviación del monto
+        if sender_avg_amount > 0:
+            amount_deviation = (amount - sender_avg_amount) / max(sender_avg_amount, 1)
+        else:
+            amount_deviation = 0.0
+        
+        return {
+            'hour_of_day': hour_of_day,
+            'day_of_week': day_of_week,
+            'is_weekend': is_weekend,
+            'sender_avg_amount': sender_avg_amount,
+            'sender_transaction_count': sender_transaction_count,
+            'sender_transaction_frequency': sender_transaction_frequency,
+            'amount_deviation': amount_deviation
+        }
+    
+    def _update_user_profile(self, user_id, amount, created_at, is_fraud):
+        """Actualizar perfil de actividad del usuario"""
+        try:
+            user_profile, created = UserActivityProfile.objects.get_or_create(user_id=user_id)
+            user_profile.update_with_transaction(amount, created_at)
+            
+            if is_fraud:
+                user_profile.fraudulent_transactions += 1
+                user_profile.save()
+                
+        except Exception as e:
+            print(f"Error al actualizar perfil de usuario: {str(e)}")
 
 class FraudModelViewSet(viewsets.ReadOnlyModelViewSet):
     """Vista para consultar información de los modelos de ML"""

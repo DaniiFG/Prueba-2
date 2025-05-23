@@ -6,10 +6,11 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from django.db.models import Count, Sum, Q
+from django.core.mail import send_mail
+from django.conf import settings
 import requests
 from datetime import datetime, timedelta
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from django.conf import settings
 from .models import Transaction, TransactionStat
 from .serializers import (
     TransactionSerializer,
@@ -27,29 +28,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
     
     def get_permissions(self):
-        """
-        Permitir acceso no autenticado para listar, crear y recuperar transacciones.
-        """
+        """Permitir acceso no autenticado para listar, crear y recuperar transacciones."""
         if self.action in ['list', 'create', 'retrieve', 'update_status']:
-            permission_classes = [AllowAny]
-        else:
-            permission_classes = [IsAuthenticated]
-        return [permission() for permission in permission_classes]
-    
-    def get_queryset(self):
-        """
-        Personalizar el queryset según la acción y el usuario.
-        """
-        queryset = super().get_queryset()
-        return queryset
-    
-    # Añadir estas líneas:
-    def get_permissions(self):
-        """
-        Permitir acceso no autenticado para listar y crear transacciones,
-        pero requerir autenticación para otras acciones.
-        """
-        if self.action in ['list', 'create', 'retrieve']:
             permission_classes = [AllowAny]
         else:
             permission_classes = [IsAuthenticated]
@@ -65,9 +45,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         print("Datos recibidos para crear transacción:", request.data)
         
-        # Debug adicional
-        print("Cabeceras:", request.headers)
-        
         serializer = self.get_serializer(data=request.data)
         
         try:
@@ -75,11 +52,33 @@ class TransactionViewSet(viewsets.ModelViewSet):
             transaction = serializer.save()
             print(f"Transacción creada exitosamente: {transaction.id}")
             
-            # Simplificamos esta parte temporalmente
-            # Marcamos la transacción como legítima por defecto
-            transaction.status = 'legitimate'
-            transaction.fraud_score = 0.1
-            transaction.save()
+            # Analizar la transacción con el servicio de fraude
+            fraud_result = self._analyze_transaction_for_fraud(transaction)
+            
+            # Actualizar la transacción con el resultado del análisis
+            if fraud_result:
+                transaction.fraud_score = fraud_result.get('fraud_score', 0.0)
+                
+                # Determinar el estado basado en el score
+                if fraud_result.get('is_fraud', False):
+                    transaction.status = 'fraudulent'
+                elif fraud_result.get('fraud_score', 0) > 0.5:
+                    transaction.status = 'possibly_fraudulent'
+                else:
+                    transaction.status = 'legitimate'
+                
+                transaction.save()
+                
+                # Enviar notificación por correo al usuario
+                self._send_transaction_notification(transaction, fraud_result)
+            else:
+                # Si no se pudo analizar, marcar como legítima por defecto
+                transaction.status = 'legitimate'
+                transaction.fraud_score = 0.1
+                transaction.save()
+                
+                # Enviar notificación básica
+                self._send_transaction_notification(transaction, None)
             
             # Actualizar estadísticas diarias
             try:
@@ -93,6 +92,137 @@ class TransactionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             print(f"Error general al procesar la transacción: {str(e)}")
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def _analyze_transaction_for_fraud(self, transaction):
+        """Enviar transacción al servicio de análisis de fraude"""
+        try:
+            fraud_service_url = getattr(settings, 'FRAUD_ANALYSIS_SERVICE_URL', 'http://localhost:8003/api/fraud/')
+            
+            # Preparar datos para el análisis
+            analysis_data = {
+                'transaction_id': str(transaction.id),
+                'sender_id': transaction.sender_id,
+                'amount': float(transaction.amount),
+                'created_at': transaction.created_at.isoformat()
+            }
+            
+            print(f"Enviando transacción para análisis: {analysis_data}")
+            
+            # Realizar solicitud al servicio de fraude
+            response = requests.post(
+                f"{fraud_service_url}analyze/",
+                json=analysis_data,
+                timeout=30
+            )
+            
+            print(f"Respuesta del servicio de fraude: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                print(f"Resultado del análisis: {result}")
+                return result
+            else:
+                print(f"Error en el servicio de fraude: {response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"Error al comunicarse con el servicio de fraude: {str(e)}")
+            return None
+    
+    def _send_transaction_notification(self, transaction, fraud_result):
+        """Enviar notificación por correo electrónico al usuario"""
+        try:
+            # Obtener información del usuario desde el servicio de autenticación
+            user_info = self._get_user_info(transaction.sender_id)
+            
+            if not user_info or not user_info.get('email'):
+                print("No se pudo obtener el email del usuario")
+                return
+            
+            user_email = user_info['email']
+            user_name = user_info.get('first_name', 'Usuario')
+            
+            # Preparar el contenido del correo según el estado
+            if transaction.status == 'legitimate':
+                subject = "✅ Transacción Exitosa - Legítima"
+                status_message = "Tu transacción ha sido procesada exitosamente y clasificada como legítima."
+                status_color = "green"
+            elif transaction.status == 'possibly_fraudulent':
+                subject = "⚠️ Transacción en Revisión - Posible Fraude"
+                status_message = "Tu transacción está siendo revisada por nuestro equipo de seguridad debido a patrones inusuales."
+                status_color = "orange"
+            else:  # fraudulent
+                subject = "🚨 Transacción Bloqueada - Fraude Detectado"
+                status_message = "Tu transacción ha sido bloqueada por medidas de seguridad. Si crees que esto es un error, contacta soporte."
+                status_color = "red"
+            
+            # Crear mensaje de correo
+            message = f"""
+Hola {user_name},
+
+{status_message}
+
+DETALLES DE LA TRANSACCIÓN:
+• ID: {str(transaction.id)[:8]}...
+• Destinatario: {transaction.receiver_name}
+• Monto: ${transaction.amount}
+• Fecha: {transaction.created_at.strftime('%d/%m/%Y %H:%M')}
+• Estado: {transaction.get_status_display_name()}
+• Puntuación de Riesgo: {transaction.fraud_score:.1%}
+
+"""
+            
+            # Agregar factores de riesgo si están disponibles
+            if fraud_result and fraud_result.get('risk_factors'):
+                message += "FACTORES DE RIESGO DETECTADOS:\n"
+                for factor in fraud_result['risk_factors']:
+                    message += f"• {factor}\n"
+                message += "\n"
+            
+            message += """
+Si tienes alguna pregunta o inquietud, no dudes en contactarnos.
+
+Atentamente,
+Equipo de Seguridad
+Sistema Anti-Fraude
+"""
+            
+            # Enviar correo electrónico
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@antifraude.com'),
+                recipient_list=[user_email],
+                fail_silently=False,
+            )
+            
+            print(f"Notificación enviada a {user_email} para transacción {transaction.id}")
+            
+        except Exception as e:
+            print(f"Error al enviar notificación por correo: {str(e)}")
+    
+    def _get_user_info(self, user_id):
+        """Obtener información del usuario desde el servicio de autenticación"""
+        try:
+            auth_service_url = getattr(settings, 'AUTH_SERVICE_URL', 'http://localhost:8001/api/auth/')
+            
+            # Realizar solicitud al servicio de autenticación
+            response = requests.get(
+                f"{auth_service_url}user/{user_id}/",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                user_data = response.json()
+                print(f"Información del usuario obtenida: {user_data.get('email')}")
+                return user_data
+            else:
+                print(f"Error al obtener información del usuario: {response.status_code}")
+                return None
+            
+        except Exception as e:
+            print(f"Error al comunicarse con el servicio de autenticación: {str(e)}")
+            return None
     
     @action(detail=True, methods=['post'])
     def update_status(self, request, pk=None):
@@ -159,7 +289,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
             'legitimate': transactions.filter(status='legitimate').count(),
             'possibly_fraudulent': transactions.filter(status='possibly_fraudulent').count(),
             'fraudulent': transactions.filter(status='fraudulent').count(),
-            'total_amount': sum([t.amount for t in transactions]),
+            'total_amount': float(sum([t.amount for t in transactions])),
         }
         
         # Calcular distribución por día para gráficos
@@ -221,11 +351,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
             stat.fraudulent_count += 1
         
         stat.save()
-    
-    def _send_fraud_notification(self, transaction):
-        """Simular envío de notificación cuando se detecta fraude"""
-        print(f"¡ALERTA DE FRAUDE! Transacción {transaction.id} detectada como fraudulenta.")
-        # Aquí implementarías la lógica real de notificación (WebSockets, emails, etc.)
 
 class TransactionStatViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = TransactionStat.objects.all()
@@ -233,5 +358,3 @@ class TransactionStatViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ['date']
     ordering = ['-date']
-
-# Create your views here.

@@ -1,12 +1,22 @@
+# Dependencias principales
 Django==3.2.19
 djangorestframework==3.14.0
 django-cors-headers==4.0.0
 django-filter==23.1
-djongo==1.3.6
-pymongo==3.12.3
+
+# Base de datos (comentar djongo si tienes problemas)
+# djongo==1.3.6
+# pymongo==3.12.3
+
+# Herramientas de base de datos
 sqlparse==0.2.4
+
+# Machine Learning
 scikit-learn==1.2.2
 pandas==2.0.0
 numpy==1.24.2
 joblib==1.2.0
+
+# Utilidades
 python-dotenv==1.0.0
+requests==2.28.2
