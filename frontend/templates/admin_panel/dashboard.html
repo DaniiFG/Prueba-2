@@ -24,10 +24,31 @@
         font-family: monospace;
         font-size: 12px;
     }
+    .loading-spinner {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 9999;
+    }
+    .stat-value {
+        transition: all 0.3s ease;
+    }
+    .stat-value.updating {
+        opacity: 0.5;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
+<!-- Loading Spinner -->
+<div class="loading-spinner">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Cargando...</span>
+    </div>
+</div>
+
 <div class="row mb-4">
     <div class="col-md-6">
         <h2 class="mb-0"><i class="fas fa-tachometer-alt me-2"></i>Panel de Administrador</h2>
@@ -52,7 +73,9 @@
                     <div class="col mr-2">
                         <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
                             Transacciones Hoy</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.total|default:0 }}</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800 stat-value" id="today-total">
+                            {{ stats.today.total|default:0 }}
+                        </div>
                     </div>
                     <div class="col-auto">
                         <i class="fas fa-calendar fa-2x text-gray-300"></i>
@@ -69,7 +92,9 @@
                     <div class="col mr-2">
                         <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
                             Monto Total (Hoy)</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800">${{ stats.today.total_amount|default:0|floatformat:2 }}</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800 stat-value" id="today-amount">
+                            ${{ stats.today.total_amount|default:0|floatformat:2 }}
+                        </div>
                     </div>
                     <div class="col-auto">
                         <i class="fas fa-dollar-sign fa-2x text-gray-300"></i>
@@ -86,7 +111,9 @@
                     <div class="col mr-2">
                         <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
                             Posible Fraude (Hoy)</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.possibly_fraudulent|default:0 }}</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800 stat-value" id="today-possibly-fraudulent">
+                            {{ stats.today.possibly_fraudulent|default:0 }}
+                        </div>
                     </div>
                     <div class="col-auto">
                         <i class="fas fa-exclamation-triangle fa-2x text-gray-300"></i>
@@ -103,7 +130,9 @@
                     <div class="col mr-2">
                         <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">
                             Fraude Detectado (Hoy)</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.today.fraudulent|default:0 }}</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800 stat-value" id="today-fraudulent">
+                            {{ stats.today.fraudulent|default:0 }}
+                        </div>
                     </div>
                     <div class="col-auto">
                         <i class="fas fa-bug fa-2x text-gray-300"></i>
@@ -167,7 +196,7 @@
                                 <th>Acciones</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="fraud-transactions-tbody">
                             {% for transaction in fraud_transactions %}
                             <tr>
                                 <td>{{ transaction.id|truncatechars:8 }}</td>
@@ -233,10 +262,12 @@
     // Variables globales para los gráficos
     let transactionsChart = null;
     let statusChart = null;
+    let updateInterval = null;
 
     // Función para actualizar el dashboard
     function refreshDashboard() {
-        location.reload();
+        console.log('Actualizando dashboard manualmente...');
+        updateDashboardStats();
     }
 
     // Función para inicializar los gráficos
@@ -386,9 +417,199 @@
         }
     }
 
+    // Función para actualizar estadísticas via AJAX
+    function updateDashboardStats() {
+        console.log('Iniciando actualización de estadísticas...');
+        
+        // Mostrar indicador de carga en las tarjetas
+        document.querySelectorAll('.stat-value').forEach(el => {
+            el.classList.add('updating');
+        });
+        
+        // Usar la URL correcta del frontend, no del microservicio directamente
+        fetch('{% url "dashboard_stats" %}', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            credentials: 'same-origin'  // Importante para incluir cookies de sesión
+        })
+        .then(response => {
+            console.log('Respuesta recibida:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Nuevas estadísticas recibidas:', data);
+            
+            // Actualizar tarjetas de estadísticas
+            if (data.today) {
+                document.getElementById('today-total').textContent = data.today.total || 0;
+                document.getElementById('today-amount').textContent = `$${(data.today.total_amount || 0).toFixed(2)}`;
+                document.getElementById('today-possibly-fraudulent').textContent = data.today.possibly_fraudulent || 0;
+                document.getElementById('today-fraudulent').textContent = data.today.fraudulent || 0;
+            }
+            
+            // Actualizar gráficos
+            if (data.last_month && transactionsChart) {
+                updateTransactionsChart(data.last_month.daily_distribution);
+            }
+            
+            if (data.last_month && statusChart) {
+                updateStatusChart(data.last_month);
+            }
+            
+            // Actualizar transacciones recientes si es necesario
+            updateRecentTransactions();
+            
+            // Remover indicador de carga
+            document.querySelectorAll('.stat-value').forEach(el => {
+                el.classList.remove('updating');
+            });
+        })
+        .catch(error => {
+            console.error('Error actualizando estadísticas:', error);
+            
+            // Remover indicador de carga en caso de error
+            document.querySelectorAll('.stat-value').forEach(el => {
+                el.classList.remove('updating');
+            });
+            
+            // Mostrar notificación de error (opcional)
+            if (window.alert) {
+                console.log('Error al actualizar estadísticas. Por favor, verifica tu conexión.');
+            }
+        });
+    }
+
+    // Función para actualizar el gráfico de transacciones
+    function updateTransactionsChart(dailyDistribution) {
+        if (!dailyDistribution || !transactionsChart) return;
+        
+        const sortedDates = Object.keys(dailyDistribution).sort();
+        const dailyValues = sortedDates.map(date => dailyDistribution[date] || 0);
+        
+        const formattedDates = sortedDates.map(date => {
+            const [year, month, day] = date.split('-');
+            return `${day}/${month}`;
+        });
+        
+        transactionsChart.data.labels = formattedDates;
+        transactionsChart.data.datasets[0].data = dailyValues;
+        transactionsChart.update();
+    }
+
+    // Función para actualizar el gráfico de estado
+    function updateStatusChart(monthStats) {
+        if (!monthStats || !statusChart) return;
+        
+        const newData = [
+            monthStats.legitimate || 0,
+            monthStats.possibly_fraudulent || 0,
+            monthStats.fraudulent || 0
+        ];
+        
+        statusChart.data.datasets[0].data = newData;
+        statusChart.update();
+    }
+
+    // Función para actualizar transacciones recientes
+    function updateRecentTransactions() {
+        fetch('{% url "recent_transactions" %}?status=fraudulent&limit=10', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.transactions) {
+                updateTransactionsTable(data.transactions);
+            }
+        })
+        .catch(error => {
+            console.error('Error actualizando transacciones recientes:', error);
+        });
+    }
+
+    // Función para actualizar la tabla de transacciones
+    function updateTransactionsTable(transactions) {
+        const tbody = document.getElementById('fraud-transactions-tbody');
+        if (!tbody) return;
+        
+        // Solo actualizar si hay nuevas transacciones
+        if (transactions.length === 0) return;
+        
+        // Crear HTML para las nuevas filas
+        let html = '';
+        transactions.forEach(trans => {
+            const date = new Date(trans.created_at);
+            const formattedDate = date.toLocaleString('es-CO', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            let statusBadge = '';
+            if (trans.status === 'legitimate') {
+                statusBadge = '<span class="badge bg-success">Legítima</span>';
+            } else if (trans.status === 'possibly_fraudulent') {
+                statusBadge = '<span class="badge bg-warning text-dark">Revisión</span>';
+            } else {
+                statusBadge = '<span class="badge bg-danger">Fraudulenta</span>';
+            }
+            
+            html += `
+                <tr>
+                    <td>${trans.id}</td>
+                    <td>${formattedDate}</td>
+                    <td>${trans.sender_name}</td>
+                    <td>${trans.receiver_name}</td>
+                    <td>$${trans.amount.toFixed(2)}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <a href="{% url 'admin_transactions' %}?id=${trans.id}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-search me-1"></i>Ver
+                        </a>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        // Actualizar tabla solo si hay cambios
+        if (html) {
+            tbody.innerHTML = html;
+        }
+    }
+
+    // Función para obtener cookie CSRF
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
     // Esperar a que el DOM esté listo
     document.addEventListener('DOMContentLoaded', function() {
-        console.log('DOM cargado, inicializando gráficos...');
+        console.log('DOM cargado, inicializando dashboard...');
         
         // Verificar que Chart.js esté disponible
         if (typeof Chart === 'undefined') {
@@ -398,98 +619,24 @@
         
         // Inicializar gráficos
         initializeCharts();
+        
+        // Configurar actualización automática cada 30 segundos
+        updateInterval = setInterval(function() {
+            console.log('Auto-actualización programada...');
+            updateDashboardStats();
+        }, 30000);
+        
+        // Actualizar estadísticas al cargar
+        setTimeout(function() {
+            updateDashboardStats();
+        }, 1000);
     });
     
-    // Auto-actualizar cada 60 segundos
-    setInterval(function() {
-        console.log('Auto-actualizando dashboard...');
-        refreshDashboard();
-    }, 60000);
+    // Limpiar intervalo cuando se abandona la página
+    window.addEventListener('beforeunload', function() {
+        if (updateInterval) {
+            clearInterval(updateInterval);
+        }
+    });
 </script>
 {% endblock %}
-
-<script>
-// Función para actualizar estadísticas via AJAX
-function updateDashboardStats() {
-    // Obtener el token de acceso de la sesión
-    const accessToken = '{{ request.session.access_token }}';
-    
-    fetch('http://localhost:8002/api/transactions/transactions/stats/', {
-        method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Nuevas estadísticas recibidas:', data);
-        
-        // Actualizar tarjetas de estadísticas
-        if (data.today) {
-            document.querySelector('.stat-card:nth-child(1) .h5').textContent = data.today.total || 0;
-            document.querySelector('.stat-card:nth-child(2) .h5').textContent = `${(data.today.total_amount || 0).toFixed(2)}`;
-            document.querySelector('.stat-card:nth-child(3) .h5').textContent = data.today.possibly_fraudulent || 0;
-            document.querySelector('.stat-card:nth-child(4) .h5').textContent = data.today.fraudulent || 0;
-        }
-        
-        // Actualizar gráficos
-        if (data.last_month && transactionsChart) {
-            updateTransactionsChart(data.last_month.daily_distribution);
-        }
-        
-        if (data.last_month && statusChart) {
-            updateStatusChart(data.last_month);
-        }
-    })
-    .catch(error => {
-        console.error('Error actualizando estadísticas:', error);
-    });
-}
-
-// Función para actualizar el gráfico de transacciones
-function updateTransactionsChart(dailyDistribution) {
-    if (!dailyDistribution || !transactionsChart) return;
-    
-    const sortedDates = Object.keys(dailyDistribution).sort();
-    const dailyValues = sortedDates.map(date => dailyDistribution[date] || 0);
-    
-    const formattedDates = sortedDates.map(date => {
-        const [year, month, day] = date.split('-');
-        return `${day}/${month}`;
-    });
-    
-    transactionsChart.data.labels = formattedDates;
-    transactionsChart.data.datasets[0].data = dailyValues;
-    transactionsChart.update();
-}
-
-// Función para actualizar el gráfico de estado
-function updateStatusChart(monthStats) {
-    if (!monthStats || !statusChart) return;
-    
-    const newData = [
-        monthStats.legitimate || 0,
-        monthStats.possibly_fraudulent || 0,
-        monthStats.fraudulent || 0
-    ];
-    
-    statusChart.data.datasets[0].data = newData;
-    statusChart.update();
-}
-
-// Actualizar cada 30 segundos
-setInterval(updateDashboardStats, 30000);
-
-// También actualizar cuando se hace clic en el botón de actualizar
-document.addEventListener('DOMContentLoaded', function() {
-    const refreshButton = document.querySelector('button[onclick="refreshDashboard()"]');
-    if (refreshButton) {
-        refreshButton.onclick = function() {
-            updateDashboardStats();
-            return false; // Prevenir recarga de página
-        };
-    }
-});
-</script>
